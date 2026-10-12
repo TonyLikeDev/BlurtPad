@@ -15,7 +15,7 @@ import webview
 from PIL import Image, ImageDraw
 
 VERSION = "1.2"
-REPO = ""  # owner/name of the GitHub repo whose releases are SayNote's updates (release.ps1 publishes them). Empty: no updates
+REPO = "TonyLikeDev/SayNote"  # owner/name of the GitHub repo whose releases are SayNote's updates (release.ps1 publishes them). Empty: no updates
 THREADS, RATE = 4, 16000
 MIN_SECS, MAX_SECS = 0.4, 30 * 60  # shorter is a key bump; longer is a forgotten recording, stopped and saved
 LEVEL_FLOOR_DB, LEVEL_SPAN_DB = -55, 50  # mic meter: -55 dB shows as silence, -5 dB as full. Calibration knob for quiet or hot mics
