@@ -4,5 +4,6 @@ numpy==2.4.6
 pywebview==6.2.1
 pystray==0.19.5
 pillow==12.3.0
+sherpa-onnx==1.13.8
 # tests
 pywin32==312

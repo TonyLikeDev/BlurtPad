@@ -20,6 +20,7 @@
   --shadow: 0 8px 16px rgba(0, 0, 0, .14), 0 0 2px rgba(0, 0, 0, .12);
   --input: #fff; --mark: #ffe58a;  /* a text field being typed in; search matches in the note */
   --focus: #1b1b1b;
+  --spk-0: #0f6cbd; --spk-1: #9a4f00; --spk-2: #107c41; --spk-3: #7b4fb8; --spk-4: #b4009e; --spk-5: #00777b;
   --ease: cubic-bezier(0, 0, 0, 1);  /* Fluent "decelerate" */
 }
 @media (prefers-color-scheme: dark) {
@@ -36,6 +37,7 @@
     --shadow: 0 8px 16px rgba(0, 0, 0, .36), 0 0 2px rgba(0, 0, 0, .3);
     --input: #1f1f1f; --mark: #6b5711;
     --focus: #fff;
+    --spk-0: #6cb8f6; --spk-1: #f2a65a; --spk-2: #6ccb5f; --spk-3: #b9a3ff; --spk-4: #f08ce4; --spk-5: #4fd1c5;
   }
 }
 :root[data-theme="dark"] {
@@ -51,6 +53,7 @@
   --shadow: 0 8px 16px rgba(0, 0, 0, .36), 0 0 2px rgba(0, 0, 0, .3);
   --input: #1f1f1f; --mark: #6b5711;
   --focus: #fff;
+  --spk-0: #6cb8f6; --spk-1: #f2a65a; --spk-2: #6ccb5f; --spk-3: #b9a3ff; --spk-4: #f08ce4; --spk-5: #4fd1c5;
 }
 
 * { box-sizing: border-box; }
@@ -254,6 +257,22 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
 #r-body.fresh { animation: rise 333ms var(--ease); }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 ::highlight(hit) { background-color: var(--mark); color: var(--text); }
+/* Team notes: each speaker's name in their own colour, the time quieter. Highlights, so the text stays plain and editable */
+::highlight(spk-0) { color: var(--spk-0); } ::highlight(spk-1) { color: var(--spk-1); } ::highlight(spk-2) { color: var(--spk-2); }
+::highlight(spk-3) { color: var(--spk-3); } ::highlight(spk-4) { color: var(--spk-4); } ::highlight(spk-5) { color: var(--spk-5); }
+::highlight(spk-t) { color: var(--text-2); }
+#r-hint { margin-top: 2px; color: var(--text-2); font-size: 12px; }
+#spk-menu {
+  position: fixed; inset: auto; margin: 0; min-width: 160px; padding: 4px; border-radius: 8px;
+  background: var(--card); color: var(--text); border: 1px solid var(--stroke); box-shadow: var(--shadow);
+}
+#spk-menu button {
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 12px; border: 0; border-radius: 4px;
+  background: transparent; text-align: left;
+}
+#spk-menu button:hover, #spk-menu button:focus-visible { background: var(--hover); }
+#spk-menu button i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+#spk-menu button[aria-checked="true"] { font-weight: 600; }
 @media (max-width: 860px) {
   .col { padding: 0 24px; }
   #r-title, #s-title { font-size: 24px; }  /* "Wednesday, September 23" still fits beside the buttons at 720px */
@@ -324,6 +343,38 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
 .say kbd { font-size: .75em; line-height: 1.6; }
 .sub { margin-top: 6px; color: var(--text-2); font-size: clamp(14px, 1.6vmin, 16px); }
 #discard { margin-top: clamp(16px, 3.5vmin, 36px); }
+#team-btn { width: 100%; margin-top: 10px; }
+.prog.det::before { width: calc(var(--p, 0) * 100%); transform: none; animation: none; transition: width .3s var(--ease); }
+
+/* Team meeting: who's there, then each person's voice check, then the meeting */
+#team { scrollbar-gutter: stable; }
+#team .col { max-width: 800px; font-size: 14px; }
+.t-intro { margin-top: 16px; color: var(--text-2); text-wrap: pretty; }
+#t-count { width: 72px; height: 32px; padding: 0 8px; font: inherit; color: inherit; background: var(--ctl); border: 1px solid var(--ctl-stroke); border-bottom-color: var(--ctl-edge); border-radius: 4px; }
+.people { display: grid; gap: 4px; margin-top: 4px; }
+.person { padding: 10px 16px; background: var(--card); border: 1px solid var(--stroke); border-radius: 4px; transition: border-color .2s; }
+.person[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.p-row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.p-row .num { width: 28px; height: 28px; font-size: 13px; }
+.p-name { flex: 1 1 180px; min-width: 0; height: 32px; padding: 0 10px; font: inherit; color: inherit; background: var(--ctl); border: 1px solid var(--ctl-stroke); border-bottom-color: var(--ctl-edge); border-radius: 4px; }
+.p-name:focus { border-bottom: 2px solid var(--accent); outline: none; }
+.p-state { color: var(--text-2); font-size: 12px; white-space: nowrap; }
+.p-state.ok { color: var(--ok); }
+.check { display: grid; gap: 10px; margin: 12px 0 4px 40px; }
+.check blockquote { margin: 0; padding: 12px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 4px 4px 0; font-size: 18px; line-height: 1.6; text-wrap: pretty; }
+.check .bars { width: 100%; height: 40px; -webkit-mask-image: none; mask-image: none; }
+.check .bars i { border-radius: 50% / min(50%, calc(3px / var(--v, .05))); }
+.c-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#c-status { color: var(--text-2); }
+#c-status.err { color: var(--crit); }
+#c-status:focus { outline: none; }
+.t-foot { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 20px 0 48px; }
+#t-start { height: 36px; padding: 0 20px; font-weight: 600; }
+#t-why { color: var(--text-2); font-size: 12px; }
+.voices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.voices li { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 2px 0 10px; border-radius: 14px; background: var(--selected); }
+.voices .icon-btn { width: 24px; height: 24px; }
+.voices .icon-btn .ic { width: 12px; height: 12px; }
 #discard .acc { margin-left: 2px; color: var(--text-2); font-size: 12px; }  /* the key, as Windows menus show it */
 .badge {
   display: grid; place-items: center; width: clamp(64px, 9vmin, 96px); height: clamp(64px, 9vmin, 96px); margin-bottom: clamp(20px, 2.8vmin, 30px);
@@ -381,6 +432,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   .item[aria-current="true"], .item[aria-current="true"] .time { forced-color-adjust: none; background: Highlight; color: HighlightText; }
   .item[aria-current="true"]::before { background: HighlightText; }
   .bars i, .dot, .prog::before, .up-prog i { forced-color-adjust: none; background: Highlight; }
+  .person[aria-current="true"] { border-color: Highlight; }
   .ring { forced-color-adjust: none; border-color: transparent; border-top-color: Highlight; }
   .sw { forced-color-adjust: none; border-color: ButtonText; background: Canvas; }
   .sw::before { background: ButtonText; }
@@ -405,6 +457,8 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v4.5M10 6.6v.01"/></symbol>
   <symbol id="i-error" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="currentColor" stroke="none"/><path d="M10 5.8v5M10 13.9v.01" style="stroke: var(--on-crit)" stroke-width="2"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><path stroke-width="1.8" d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle stroke-width="1.8" cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-people" viewBox="0 0 20 20"><circle cx="7.5" cy="7" r="3"/><path d="M2 16.5c.6-2.9 2.8-4.5 5.5-4.5s4.9 1.6 5.5 4.5M13 4.2a3 3 0 0 1 0 5.6M14.8 12.3c1.6.6 2.7 2 3.2 4.2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15"/></symbol>
   <symbol id="i-back" viewBox="0 0 20 20"><path d="M16.5 10H3.5M8.5 5l-5 5 5 5"/></symbol>
   <symbol id="i-search" viewBox="0 0 20 20"><circle cx="11.5" cy="8.5" r="5"/><path d="M7.9 12.1 3.5 16.5"/></symbol>
   <symbol id="i-front" viewBox="0 0 20 20"><path d="M7 6.5V4.5a2 2 0 0 1 2-2h6.5a2 2 0 0 1 2 2V11a2 2 0 0 1-2 2h-2"/><rect x="2.5" y="6.5" width="11" height="11" rx="2"/></symbol>
@@ -419,6 +473,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   <div class="side-top">
     <button id="rec" type="button"></button>
     <p class="hint hk" id="hint"><span>or press</span><span class="keys" data-keys></span><span id="hint-tail">in any app</span></p>
+    <button class="btn" id="team-btn" type="button" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg>Team meeting</button>
   </div>
   <div class="list-head"><h2>Notes</h2><span id="count"></span></div>
   <div class="search" id="search" role="search" hidden>
@@ -443,13 +498,14 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   <section id="reader" hidden aria-label="Selected note">
     <div class="col">
       <header class="r-head">
-        <div><h1 id="r-title" class="display"></h1><div class="meta"><p id="r-meta"></p><p id="r-save"></p></div></div>
+        <div><h1 id="r-title" class="display"></h1><div class="meta"><p id="r-meta"></p><p id="r-save"></p></div><p id="r-hint" hidden>Click a name to change who said it.</p></div>
         <div class="actions">
           <button class="btn" id="copy" type="button" title="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span>Copy</span></button>
           <button class="btn" id="delete" type="button" title="Delete"><svg class="ic" aria-hidden="true"><use href="#i-delete"/></svg><span>Delete</span></button>
         </div>
       </header>
       <div id="r-body" contenteditable="plaintext-only" role="textbox" aria-multiline="true" aria-label="Note text"></div>
+      <div id="spk-menu" popover role="menu" aria-label="Who said this"></div>
     </div>
   </section>
 
@@ -511,24 +567,60 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
           <div class="ctl"><input class="sw" id="s-autostart" type="checkbox" role="switch" aria-describedby="d-autostart e-autostart"></div>
         </div>
       </div>
+      <div class="cards">
+        <div class="card">
+          <svg class="ic" aria-hidden="true"><use href="#i-people"/></svg>
+          <div class="txt">
+            <p class="lbl">Saved voices</p>
+            <p class="desc" id="d-voices">From team meetings' voice checks, kept on this PC only. Forget a voice and that person does the voice check again.</p>
+            <ul class="voices" id="s-voices" aria-describedby="d-voices"></ul>
+          </div>
+        </div>
+      </div>
       <div class="ver"><span id="s-ver"></span><button class="link" id="up-check" type="button">Check for updates</button><span id="up-status" role="status"></span></div>
     </div>
   </section>
 
+  <section id="team" hidden aria-labelledby="t-title">
+    <div class="col">
+      <header class="r-head s-head">
+        <button class="icon-btn" id="t-back" type="button" aria-label="Back to notes" title="Back to notes (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-back"/></svg></button>
+        <h1 id="t-title" class="display">Team meeting</h1>
+      </header>
+      <p class="t-intro">SayNote learns each person's voice first, then writes the meeting down with who said what. Let everyone know they're being recorded.</p>
+      <div class="cards">
+        <div class="card">
+          <svg class="ic" aria-hidden="true"><use href="#i-people"/></svg>
+          <div class="txt"><label class="lbl" for="t-count">How many people?</label><p class="desc" id="d-count">Everyone who will speak.</p></div>
+          <div class="ctl"><input id="t-count" type="number" min="2" max="10" value="2" aria-describedby="d-count"></div>
+        </div>
+      </div>
+      <ol class="people" id="t-people"></ol>
+      <div class="check" id="t-check" hidden>
+        <p id="c-who"></p>
+        <blockquote id="c-sentence"></blockquote>
+        <div class="bars" id="c-bars" aria-hidden="true" hidden></div>
+        <div class="c-row"><button class="btn accent" id="c-go" type="button">Start</button><p id="c-status" role="status" tabindex="-1"></p></div>
+      </div>
+      <datalist id="t-voices"></datalist>
+      <div class="t-foot"><button class="btn accent" id="t-start" type="button">Start meeting</button><p id="t-why"></p></div>
+    </div>
+  </section>
+
   <section id="recording" class="stage" hidden aria-label="Recording">
-    <span class="pill"><span class="dot" aria-hidden="true"></span>Recording</span>
+    <span class="pill"><span class="dot" aria-hidden="true"></span><span id="rec-kind">Recording</span></span>
     <p id="elapsed" class="display">0:00</p>
     <div class="bars" id="bars" aria-hidden="true"></div>
     <p class="say" id="say"><span class="hk">Press <span class="keys" data-keys></span> again to save</span><span class="nohk" hidden>Click Stop and save when you're done</span></p>
-    <p class="sub">Take your time. Pauses are fine.</p>
+    <p class="sub" id="rec-sub">Take your time. Pauses are fine.</p>
     <button class="btn" id="discard" type="button" aria-keyshortcuts="Escape"><svg class="ic" aria-hidden="true"><use href="#i-delete"/></svg>Discard<span class="acc" aria-hidden="true">Esc</span></button>
   </section>
 
   <section id="busy" class="stage" hidden aria-label="Transcribing">
     <span class="badge" aria-hidden="true"><svg class="ic"><use href="#i-note"/></svg></span>
-    <h2 class="display">Writing down what you said…</h2>
-    <p class="sub">You can keep working. Your note will open here.</p>
-    <div class="prog" aria-hidden="true"></div>
+    <h2 class="display" id="busy-title">Writing down what you said…</h2>
+    <p class="sub" id="busy-sub">You can keep working. Your note will open here.</p>
+    <div class="prog" id="busy-prog" aria-hidden="true"></div>
   </section>
 
   <section id="empty" hidden aria-label="Getting started">
@@ -563,6 +655,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   let saveTimer = null, saveChain = Promise.resolve(), savedTimer = null, saves = 0  // saves: edits that went through
   let toastUndo = false, discarding = false
   let setOpen = false, sets = null, setsReq = 0, afterLoad = null, opener = null, capturing = false
+  let teamOpen = false, team = null, vcheck = null, people = []  // team: what get_team() said; vcheck: the person being voice-checked
 
   // ---- formatting ----
   const dayStart = (t) => new Date(t).setHours(0, 0, 0, 0)
@@ -632,7 +725,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   // ---- state ----
   function applyState(s) {
     const prev = st.state
-    st = { state: s.state || 'idle', problem: s.problem || null, started: s.started || null }
+    st = { state: s.state || 'idle', problem: s.problem || null, started: s.started || null, team: s.team || null, progress: s.progress ?? null }
     if (st.state === 'recording' && !st.started) st.started = Date.now()
     if (s.hotkey && s.hotkey !== hotkey) { hotkey = s.hotkey; fillKeys() }
     hotkeyOk = s.hotkey_ok !== false
@@ -655,6 +748,17 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     $('fix-hotkey').hidden = hotkeyOk
 
     $('loading').hidden = st.state !== 'loading'
+    $('team-btn').disabled = rec || busy
+    // A meeting says so on the recording and writing-down stages, with how far the writing-down has got
+    const meet = st.team && st.team.length ? st.team : null
+    $('rec-kind').textContent = meet ? 'Meeting' : 'Recording'
+    $('rec-sub').textContent = meet ? listNames(meet) : 'Take your time. Pauses are fine.'
+    $('busy-title').textContent = meet ? 'Writing down the meeting…' : 'Writing down what you said…'
+    const pct = meet && st.progress != null ? Math.round(st.progress * 100) : null
+    $('busy-sub').textContent = pct != null ? `${pct}% done. You can keep working; the note will open here.` : 'You can keep working. Your note will open here.'
+    $('busy-prog').classList.toggle('det', pct != null)
+    $('busy-prog').style.setProperty('--p', pct != null ? st.progress : 0)
+    if (rec && teamOpen) closeTeam()
     showUpdate(s.update)
     syncLang()
     $('problem').hidden = !st.problem
@@ -668,7 +772,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
       tick()
       clock = setInterval(tick, 500)
     }
-    if (rec && prev !== 'recording') announce(hotkeyOk ? `Recording. Press ${hotkey} again to save.` : "Recording. Click Stop and save when you're done.")
+    if (rec && prev !== 'recording') announce((meet ? 'Meeting recording. ' : 'Recording. ') + (hotkeyOk ? `Press ${hotkey} again to save.` : "Click Stop and save when you're done."))
     if (busy && prev !== 'transcribing') announce('Writing down what you said.')
     showView()
     // The inert list (recording) and the disabled #rec (transcribing) drop focus to <body>. Put it back on the selected
@@ -686,6 +790,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   }
 
   function onLevel(v) {
+    if (vcheck && vcheck.busy) return checkLevel(v)
     if (st.state !== 'recording') return
     levels.push(Math.min(1, Math.max(0, Number(v) || 0)))
     if (levels.length > BARS) levels.shift()
@@ -694,9 +799,9 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   }
 
   function showView() {
-    const v = st.state === 'recording' ? 'recording' : setOpen ? 'settings' : st.state === 'transcribing' && !(peek && notes.length) ? 'busy'
+    const v = st.state === 'recording' ? 'recording' : setOpen ? 'settings' : teamOpen ? 'team' : st.state === 'transcribing' && !(peek && notes.length) ? 'busy'
       : !loaded ? null : notes.length ? 'reader' : 'empty'
-    for (const id of ['reader', 'settings', 'recording', 'busy', 'empty']) {
+    for (const id of ['reader', 'settings', 'team', 'recording', 'busy', 'empty']) {
       const s = $(id), show = id === v
       if (s.hidden === show) s.hidden = !show
     }
@@ -765,6 +870,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
       saveStatus(failed.has(n.id) ? 'fail' : '')
     } else if (document.activeElement !== body) body.textContent = textOf(n)  // never rewrite text under the caret
     $('r-title').textContent = fullDate(n.created)
+    $('r-hint').hidden = !teamOf(textOf(n))
     renderMeta(n)
     body.classList.toggle('fresh', n.id === freshId)
     mark()
@@ -788,11 +894,13 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
       }
     }
     CSS.highlights.set('hit', new Highlight(...ranges))
+    markSpeakers()
   }
 
   function select(id, focus) {
     if (!id) return
     if (setOpen) closeSettings()
+    if (teamOpen) closeTeam()
     selId = id
     peek = true
     markSelected()
@@ -816,6 +924,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
       return toast('Note saved')
     }
     if (setOpen) closeSettings()
+    if (teamOpen) closeTeam()
     selId = n.id
     renderList()
     select(n.id, lost())
@@ -906,6 +1015,209 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     if (kind === 'saved') savedTimer = setTimeout(() => s.classList.add('gone'), 1600)
   }
 
+  // ---- team notes ----
+  // A team note starts "Team note: Linh, Minh" and has one paragraph per turn: "Linh (0:42): We should ship Friday."
+  const teamOf = (text) => { const m = /^Team note: (.+)/.exec(text || ''); return m ? m[1].split(', ') : null }
+  const listNames = (n) => n.length < 2 ? n.join('') : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1]
+  const cleanName = (s) => s.replace(/[,\r\n\t]/g, ' ').split(/\s+/).filter(Boolean).join(' ').slice(0, 40)
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  let speakers = []  // [{range, start, name}] of the names in the open note, for clicks
+
+  function markSpeakers() {
+    const keys = ['spk-0', 'spk-1', 'spk-2', 'spk-3', 'spk-4', 'spk-5', 'spk-t'], sets = Object.fromEntries(keys.map((k) => [k, []]))
+    speakers = []
+    const n = current(), names = n && teamOf(textOf(n))
+    if (names && window.Highlight) {
+      const walk = document.createTreeWalker($('r-body'), NodeFilter.SHOW_TEXT), at = []  // char -> [text node, offset]
+      let s = ''
+      for (let t; (t = walk.nextNode());) { s += t.data; for (let i = 0; i < t.data.length; i++) at.push([t, i]) }
+      const range = (a, z) => { const r = new Range(); r.setStart(...at[a]); r.setEnd(at[z - 1][0], at[z - 1][1] + 1); return r }
+      const re = new RegExp(`^(${[...names, 'Unknown'].map(esc).join('|')}) (\\(\\d+(?::\\d\\d){1,2}\\)):`, 'gm')
+      for (const m of s.matchAll(re)) {
+        const i = names.indexOf(m[1]), r = range(m.index, m.index + m[1].length)
+        if (i >= 0) sets['spk-' + (i % 6)].push(r)
+        sets['spk-t'].push(range(m.index + m[1].length + 1, m.index + m[1].length + 1 + m[2].length))
+        speakers.push({ range: r, start: m.index, name: m[1] })
+      }
+    }
+    for (const k of keys) CSS.highlights.set(k, new Highlight(...sets[k]))
+  }
+  const speakerAt = (x, y) => speakers.find((p) => [...p.range.getClientRects()].some((r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom))
+
+  // Clicking a name offers the meeting's other people; picking one rewrites that name and saves like any edit
+  function openSpeakerMenu(p) {
+    const n = current(), names = n && teamOf(textOf(n))
+    if (!names) return
+    const menu = $('spk-menu')
+    menu.replaceChildren(...[...names, 'Unknown'].map((name, i) => {
+      const b = el('button')
+      b.type = 'button'
+      b.setAttribute('role', 'menuitemradio')
+      b.setAttribute('aria-checked', name === p.name)
+      const dot = el('i')
+      dot.style.background = i < names.length ? `var(--spk-${i % 6})` : 'var(--text-2)'
+      b.append(dot, name)
+      b.addEventListener('click', () => { menu.hidePopover(); setSpeaker(p, name) })
+      return b
+    }))
+    const r = p.range.getBoundingClientRect()
+    menu.style.left = Math.min(r.left, innerWidth - 180) + 'px'
+    menu.style.top = Math.min(r.bottom + 4, innerHeight - 40 * (names.length + 1) - 12) + 'px'
+    menu.showPopover()
+    ;(menu.querySelector('[aria-checked="true"]') || menu.firstChild).focus()
+  }
+  function setSpeaker(p, name) {
+    if (!shownId || name === p.name) return
+    const body = $('r-body'), text = body.textContent
+    if (text.slice(p.start, p.start + p.name.length) !== p.name) return  // the text moved under the menu
+    body.textContent = text.slice(0, p.start) + name + text.slice(p.start + p.name.length)
+    drafts.set(shownId, body.textContent.replace(/\s+$/, ''))
+    mark()
+    save()
+    announce(`Changed to ${name}.`)
+  }
+
+  // ---- team meeting setup ----
+  function openTeam() {
+    if (!api || teamOpen || st.state === 'recording' || st.state === 'transcribing') return
+    if (setOpen) closeSettings()
+    save()
+    teamOpen = true
+    opener = document.activeElement
+    $('team-btn').setAttribute('aria-pressed', 'true')
+    if (!people.length) people = ['', '']
+    showView()
+    $('team').scrollTop = 0
+    renderTeam()
+    $('t-count').focus()
+    Promise.resolve(api.get_team()).then((t) => {
+      team = t
+      $('t-count').max = t.max
+      $('c-sentence').textContent = t.sentence
+      $('t-voices').replaceChildren(...t.voices.map((v) => new Option(v)))
+      renderTeam()
+    }, () => { $('t-why').textContent = "Couldn't load saved voices." })
+  }
+  function closeTeam(restore) {
+    if (!teamOpen) return
+    teamOpen = false
+    $('team-btn').setAttribute('aria-pressed', 'false')
+    showView()
+    if (restore) ($('list').querySelector('.item[tabindex="0"]') || $('team-btn')).focus()
+  }
+  const hasVoice = (name) => !!(team && team.voices.includes(name))
+
+  // One row per person: their name, whether SayNote knows their voice, and the voice check button
+  function renderTeam() {
+    const list = $('t-people'), count = Math.max(2, Math.min(team ? team.max : 10, people.length))
+    while (list.children.length < count) {
+      const i = list.children.length, li = el('li', 'person'), row = el('div', 'p-row'), input = el('input', 'p-name')
+      input.type = 'text'
+      input.setAttribute('list', 't-voices')
+      input.maxLength = 40
+      input.autocomplete = 'off'
+      input.spellcheck = false
+      input.setAttribute('aria-label', `Person ${i + 1}'s name`)
+      input.addEventListener('input', () => { people[i] = input.value; renderTeam() })
+      const go = el('button', 'link p-go')
+      go.type = 'button'
+      go.addEventListener('click', () => openCheck(i))
+      row.append(el('span', 'num', String(i + 1)), input, el('span', 'p-state'), go)
+      li.append(row)
+      list.append(li)
+    }
+    while (list.children.length > count) list.lastChild.remove()
+    if ($('t-count').value !== String(count) && document.activeElement !== $('t-count')) $('t-count').value = count
+    ;[...list.children].forEach((li, i) => {
+      const name = cleanName(people[i] || ''), input = li.querySelector('.p-name'), state = li.querySelector('.p-state'), go = li.querySelector('.p-go')
+      if (input.value !== (people[i] || '')) input.value = people[i] || ''
+      li.setAttribute('aria-current', vcheck && vcheck.i === i)
+      state.textContent = !name ? '' : hasVoice(name) ? 'Voice saved' : 'Needs a voice check'
+      state.className = 'p-state' + (name && hasVoice(name) ? ' ok' : '')
+      go.textContent = hasVoice(name) ? 'Check again' : 'Voice check'
+      go.hidden = !name || !!vcheck
+      go.setAttribute('aria-label', `${go.textContent} for ${name}`)
+    })
+    // The main button does the next thing: voice checks until everyone has one, then the meeting
+    const names = people.slice(0, count).map((n) => cleanName(n || '')), need = names.findIndex((n) => n && !hasVoice(n))
+    const dup = names.some((n, i) => n && names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i)
+    const why = !team ? 'Loading…' : names.some((n) => !n) ? "Type everyone's name." : dup ? 'Two people have the same name.' : ''
+    const b = $('t-start')
+    b.textContent = why || need < 0 ? 'Start meeting' : `Voice check: ${names.filter((n) => !hasVoice(n)).length} to go`
+    b.disabled = !!why || !!vcheck
+    $('t-why').textContent = why || (need < 0 ? 'Everyone has a saved voice.' : 'Each person reads one sentence so SayNote learns their voice.')
+  }
+
+  function openCheck(i) {
+    const name = cleanName(people[i] || '')
+    if (!name || !team) return
+    vcheck = { i, name, busy: false }
+    const li = $('t-people').children[i], card = $('t-check')
+    li.append(card)
+    card.hidden = false
+    $('c-who').textContent = `${name}, read this aloud when you're ready:`
+    $('c-status').textContent = ''
+    $('c-status').className = ''
+    $('c-go').textContent = 'Start'
+    $('c-go').hidden = false
+    for (const b of $('c-bars').children) b.style.removeProperty('--v')
+    $('c-bars').hidden = true  // the meter shows while it listens
+    renderTeam()
+    li.scrollIntoView({ block: 'nearest' })
+    $('c-go').focus()
+  }
+  function closeCheck() {
+    vcheck = null
+    $('t-check').hidden = true
+    $('team').querySelector('.col').append($('t-check'))
+    renderTeam()
+  }
+  function checkLevel(v) {
+    const bars = [...$('c-bars').children]
+    bars.push(bars.shift())  // scroll left, newest on the right
+    $('c-bars').append(bars[bars.length - 1])
+    bars[bars.length - 1].style.setProperty('--v', Math.min(1, 0.05 + (Number(v) || 0) * 1.4).toFixed(3))
+  }
+  async function runCheck() {
+    if (!vcheck || vcheck.busy) return
+    const c = vcheck, secs = team.seconds
+    c.busy = true
+    $('c-go').hidden = true
+    $('c-bars').hidden = false
+    $('c-status').className = ''
+    $('c-status').focus()
+    let left = secs
+    $('c-status').textContent = `Listening… ${left}`
+    const tick = setInterval(() => { left = Math.max(1, left - 1); $('c-status').textContent = left > 1 ? `Listening… ${left}` : 'Learning the voice…' }, 1000)
+    let r = null
+    try { r = await api.record_voice(c.name) } catch (e) { r = null }
+    clearInterval(tick)
+    c.busy = false
+    if (vcheck !== c) return
+    if (r && r.ok) {
+      if (!team.voices.includes(c.name)) team.voices.push(c.name)
+      $('t-voices').replaceChildren(...team.voices.map((v) => new Option(v)))
+      announce(`Got ${c.name}'s voice.`)
+      const next = people.findIndex((n, i) => i > c.i && i < $('t-people').children.length && cleanName(n || '') && !hasVoice(cleanName(n)))
+      closeCheck()
+      if (next >= 0) openCheck(next); else $('t-start').focus()
+    } else {
+      $('c-status').textContent = (r && r.error) || "The voice check didn't work. Try again."
+      $('c-status').className = 'err'
+      $('c-go').textContent = 'Try again'
+      $('c-go').hidden = false
+      $('c-go').focus()
+    }
+  }
+  async function teamStart() {
+    const names = people.slice(0, $('t-people').children.length).map((n) => cleanName(n || ''))
+    const need = names.findIndex((n) => !hasVoice(n))
+    if (need >= 0) return openCheck(need)
+    let r = null
+    try { r = await api.start_meeting(names) } catch (e) { r = null }
+    if (!r || !r.ok) $('t-why').textContent = (r && r.error) || "The meeting didn't start. Try again."
+  }
+
   // ---- search ----
   function onSearch() {
     query = $('q').value
@@ -989,6 +1301,28 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     ;(o || $('list').querySelector('.item[tabindex="0"]') || $('rec')).focus()
   }
 
+  function fillVoices(voices) {
+    const ul = $('s-voices'), had = ul.contains(document.activeElement)
+    ul.replaceChildren(...(voices.length ? voices.map((v) => {
+      const li = el('li', null, v), b = el('button', 'icon-btn')
+      b.type = 'button'
+      b.innerHTML = icon('x')
+      b.setAttribute('aria-label', `Forget ${v}'s voice`)
+      b.title = 'Forget this voice'
+      b.addEventListener('click', async () => {
+        let ok = false
+        try { ok = await api.forget_voice(v) } catch (e) { ok = false }
+        if (!ok) return toast("Couldn't forget that voice.", 'error')
+        if (team) team.voices = team.voices.filter((x) => x !== v)
+        fillVoices(voices.filter((x) => x !== v))
+        announce(`Forgot ${v}'s voice.`)
+      })
+      li.append(b)
+      return li
+    }) : [el('li', null, 'None yet')]))
+    if (had) (ul.querySelector('button') || $('s-back')).focus()
+  }
+
   const langName = new Intl.DisplayNames(['en'], { type: 'language' })
   function fillSettings(s) {
     if (!s) return
@@ -1009,6 +1343,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     if (s.language && ![...lang.options].some((o) => o.value === s.language)) lang.append(new Option(s.language, s.language))
     lang.value = s.language || 'en'
     $('s-ver').textContent = s.version ? 'SayNote ' + s.version : ''
+    fillVoices(s.voices || [])
     if (s.hotkey && s.hotkey !== hotkey && !capturing) { hotkey = s.hotkey; fillKeys() }
   }
 
@@ -1175,6 +1510,26 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   })
 
   $('gear').addEventListener('click', () => setOpen ? closeSettings(true) : openSettings())
+  $('team-btn').addEventListener('click', () => teamOpen ? closeTeam(true) : openTeam())
+  $('t-back').addEventListener('click', () => closeTeam(true))
+  $('t-count').addEventListener('input', () => {
+    const n = Math.round(Number($('t-count').value))
+    if (!(n >= 2 && n <= (team ? team.max : 10))) return  // mid-typing ("1" on the way to "12")
+    if (vcheck && vcheck.i >= n) closeCheck()
+    people.length = n
+    for (let i = 0; i < n; i++) people[i] = people[i] || ''
+    renderTeam()
+  })
+  $('c-go').addEventListener('click', runCheck)
+  $('t-start').addEventListener('click', teamStart)
+  body.addEventListener('click', (e) => { const p = speakerAt(e.clientX, e.clientY); if (p) openSpeakerMenu(p) })
+  body.addEventListener('mousemove', (e) => { body.style.cursor = speakers.length && speakerAt(e.clientX, e.clientY) ? 'pointer' : '' })
+  $('spk-menu').addEventListener('keydown', (e) => {
+    const items = [...$('spk-menu').children], i = items.indexOf(document.activeElement)
+    const j = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 }[e.key]
+    if (j != null) { e.preventDefault(); items[(j + items.length) % items.length].focus() }
+  })
+  $('spk-menu').addEventListener('toggle', (e) => { if (e.newState === 'closed' && $('spk-menu').contains(document.activeElement)) $('r-body').focus() })
   $('s-back').addEventListener('click', () => closeSettings(true))
   $('up-go').addEventListener('click', () => api && Promise.resolve(api.install_update()).catch(() => toast("Couldn't start the update.", 'error')))
   $('up-check').addEventListener('click', () => {
@@ -1226,6 +1581,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
       undoDiscard()
     } else if (e.key === 'Escape' && !e.repeat) {
       if (st.state === 'recording') { e.preventDefault(); discard() } else if (setOpen && !editable(e.target)) { e.preventDefault(); closeSettings(true) }
+      else if (teamOpen && !vcheck && !editable(e.target)) { e.preventDefault(); closeTeam(true) }
     }
   })
   document.addEventListener('animationend', (e) => e.target.classList.remove('fresh'))
@@ -1276,6 +1632,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   }
 
   for (let i = 0; i < BARS; i++) $('bars').append(el('i'))
+  for (let i = 0; i < 40; i++) $('c-bars').append(el('i'))
   fillKeys()
   applyState(st)
   start()

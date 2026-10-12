@@ -1,6 +1,8 @@
 // Preview harness, and the page <-> Python contract. Active only when the page is opened with ?preview
 // (from disk, in a browser). Inside the app it does nothing and window.pywebview is the real Python side.
 //   index.html?preview&state=idle|loading|recording|transcribing&theme=light|dark&empty&problem&message=Some+text
+//   also &update (a new version is out), &team=Linh,Minh,Tony (opens Team meeting with those names), &check=1 (and the
+//   voice check for person 1), &meeting (state=recording|transcribing is a team meeting), &transcript (opens a team note)
 //
 // Python side (window.pywebview.api.*, each returns a Promise):
 //   get_state()      -> {state, problem, hotkey, hotkey_ok, started}
@@ -41,6 +43,16 @@
 //                       install or a recording or transcription is running (a 'message' says which). When the download
 //                       is ready, SayNote quits and the new version starts by itself; a failed download sends a
 //                       'message' and progress goes back to null
+//   get_team()       -> {voices, sentence, seconds, max}: names with a saved voice (sorted), the sentence a voice check
+//                       reads, how many seconds it records, the most people in a meeting. Also starts fetching the voice model
+//   record_voice(name) -> {ok, error}. Records `seconds` of that person reading `sentence` (the call takes that long, and
+//                       'level' messages arrive meanwhile), then remembers the voice under that name, replacing an older one
+//   forget_voice(name) -> true once that voice is deleted. get_settings() also lists voices: the saved names
+//   start_meeting(names) -> {ok, error}. 2..max different names, each with a saved voice. Starts recording, like toggle();
+//                       stop it with toggle() or the hotkey; Discard and Undo work as usual. The note that arrives reads
+//                       "Team note: Linh, Minh\n\nLinh (0:00): ...\n\nMinh (0:07): ..." ("Unknown" when no voice matched)
+// get_state() and 'state' also carry team: null, or the meeting's names while it records or is written down, and
+//                       progress: null, or 0..1 while a meeting is written down
 // get_state() and 'state' also carry update: null, or {version: '1.3', notes: "what's new, plain text",
 //                       progress: null (available) | 0..0.99 (downloading) | 1 (installing: SayNote is about to restart)}
 // Call them once window.pywebview.api exists (the 'pywebviewready' event), never before.
@@ -69,6 +81,7 @@
   let notes = q.has('empty') ? [] : [
     note(at(0, 9, 41), 'Plan for the week. Monday finish the landing page copy and send it to Linh for review. Tuesday morning is the dentist at nine thirty, so no meetings before eleven. Wednesday and Thursday are for the voice notes app: make it a real app with an icon, then fix the tray menu. Friday, invoice the two clients and back up the laptop. If there is time left, start reading the book on habits that Minh recommended.'),
     note(at(0, 8, 5), 'Buy milk, eggs and coffee beans on the way home.'),
+    note(at(1, 15, 30), 'Team note: Linh, Minh, Tony\n\nLinh (0:00): Okay, let\'s start. The main topic today is the release date for the new version.\n\nMinh (0:06): I think we can ship on Friday if the testing goes well.\n\nTony (0:11): Testing is almost done. I found two small bugs in the settings page yesterday.\n\nLinh (0:19): Are they serious, or can they wait for the next update?\n\nTony (0:23): They can wait. Neither one loses any data.\n\nUnknown (0:28): Sorry I\'m late.\n\nLinh (0:31): Good. Then Friday it is.'),
     note(at(1, 21, 17), 'Idea for the blog: a short post about why I stopped using five different note apps and went back to plain text files. Main point is that I never lost a single note in a text file, but I lost two years of notes when a sync service shut down.'),
     note(at(1, 14, 2), 'Call the landlord about the heater before Friday.'),
     note(at(3, 18, 30), 'Gift ideas for mom: the blue scarf from the market, a framed photo from the trip to Da Lat, or a cooking class for two.'),
@@ -80,7 +93,10 @@
   const problem = q.has('problem') ? 'Ctrl+Alt+N is taken by another program. Is SayNote already running?' : null
   const hotkey = 'Ctrl+Alt+N', hotkey_ok = !problem
   let update = q.has('update') ? { version: '1.3', notes: 'Notes can be pinned to the top.\nThe tray icon shows how long you have been recording.', progress: null } : null
-  const snapshot = () => ({ state, problem, hotkey: settings.hotkey, hotkey_ok, started, update })
+  let meeting = q.has('meeting') ? ['Linh', 'Minh', 'Tony', 'An'] : null, progress = q.has('meeting') && state === 'transcribing' ? 0.35 : null
+  const voices = ['Minh']
+  const snapshot = () => ({ state, problem, hotkey: settings.hotkey, hotkey_ok, started, update,
+    team: state === 'recording' || state === 'transcribing' ? meeting : null, progress: state === 'transcribing' ? progress : null })
   const send = (msg) => window.SayNote && window.SayNote.update(msg)
   const setState = (s, since = Date.now()) => {
     state = s
@@ -115,7 +131,21 @@
     list_notes: async () => notes,
     toggle: async () => {
       if (state === 'transcribing') return null
-      if (state !== 'recording') return thrownAway = null, setState('recording'), null
+      if (state !== 'recording') return thrownAway = null, meeting = null, setState('recording'), null
+      if (meeting) {  // the preview writes a meeting down in 3 s
+        progress = 0
+        setState('transcribing')
+        const tick = setInterval(() => {
+          progress = Math.min(1, progress + 0.1)
+          send({ type: 'state', ...snapshot() })
+          if (progress < 1) return
+          clearInterval(tick)
+          const names = meeting
+          meeting = progress = null
+          save(`Team note: ${names.join(', ')}\n\n` + names.map((n, i) => `${n} (0:${String(i * 7).padStart(2, '0')}): This is what ${n} said in the preview.`).join('\n\n'))
+        }, 300)
+        return null
+      }
       setState('transcribing')
       setTimeout(() => save('This note was made in the preview. In the app, what you said appears here.'), 1500)
       return null
@@ -143,7 +173,7 @@
     },
     delete_note: async (nid) => { notes = notes.filter((n) => n.id !== nid); return true },
     open_folder: async () => null,
-    get_settings: async () => new Promise((resolve) => setTimeout(() => resolve({ ...settings }), 300)),
+    get_settings: async () => new Promise((resolve) => setTimeout(() => resolve({ ...settings, voices: [...voices].sort() }), 300)),
     set_setting: async (key, value) => {
       if (key === 'hotkey') {
         const m = HOTKEY.exec(value || '')
@@ -164,6 +194,26 @@
       return result()
     },
     pick_hotkey: async () => null,
+    get_team: async () => ({ voices: [...voices].sort(), sentence: "The quick brown fox jumps over the lazy dog. I'm reading this so SayNote can learn how my voice sounds.", seconds: 3, max: 10 }),
+    record_voice: async (name) => new Promise((resolve) => {  // 3 s of a fake voice; a person named Error isn't heard
+      let t = 0
+      const tick = setInterval(() => send({ type: 'level', level: Math.max(0, 0.4 + 0.3 * Math.sin((t += 0.6))) }), 66)
+      setTimeout(() => {
+        clearInterval(tick)
+        if (name === 'Error') return resolve({ ok: false, error: "SayNote couldn't hear you. Check the microphone, then try again." })
+        if (!voices.includes(name)) voices.push(name)
+        resolve({ ok: true, error: null })
+      }, 3000)
+    }),
+    forget_voice: async (name) => voices.includes(name) && !!voices.splice(voices.indexOf(name), 1),
+    start_meeting: async (names) => {
+      const missing = names.filter((n) => !voices.includes(n))
+      if (missing.length) return { ok: false, error: `${missing.join(', ')} still need a voice check.` }
+      meeting = names
+      thrownAway = null
+      setState('recording')
+      return { ok: true, error: null }
+    },
     check_update: async () => new Promise((resolve) => setTimeout(() => resolve({ update, error: null }), 600)),
     install_update: async () => {  // the preview downloads in 3 s, then stops at "Installing"
       if (!update || update.progress != null || state === 'recording' || state === 'transcribing') return false
@@ -179,5 +229,17 @@
     window.dispatchEvent(new Event('pywebviewready'))
     if (state === 'recording') setState('recording', started)  // starts the fake mic level, 47 s into a recording
     if (q.get('message')) setTimeout(() => send({ type: 'message', text: q.get('message'), kind: 'info' }), 50)
+    // Preview-only shortcuts into the team screens, through the page's own buttons and fields
+    const $ = (sel) => document.querySelector(sel)
+    if (q.has('team')) setTimeout(() => {
+      const names = (q.get('team') || '').split(',').filter(Boolean)
+      $('#team-btn').click()
+      if (names.length > 2) { $('#t-count').value = names.length; $('#t-count').dispatchEvent(new Event('input')) }
+      setTimeout(() => {
+        names.forEach((n, i) => { const f = document.querySelectorAll('.p-name')[i]; if (f) { f.value = n; f.dispatchEvent(new Event('input')) } })
+        if (q.get('check')) document.querySelectorAll('.p-go')[Number(q.get('check')) - 1]?.click()
+      }, 100)
+    }, 300)
+    if (q.has('transcript')) setTimeout(() => document.querySelector('#list .item:nth-child(1)') && [...document.querySelectorAll('#list .item')].find((b) => b.textContent.includes('Team note'))?.click(), 300)
   })
 })()

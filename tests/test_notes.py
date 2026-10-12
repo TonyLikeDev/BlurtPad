@@ -1,6 +1,7 @@
 """python tests/test_notes.py [pure] [exe] [app]      (no args = pure app)
 pure: note files, the delete guard, the Recycle Bin.
 update: offering a new version and downloading its installer (from a local server), in temp folders.
+team: a meeting of four synthetic voices, transcribed with who said what (Whisper and the voice model; no microphone).
 exe:  the built dist\\SayNote\\SayNote.exe: it starts, the hotkey flips the title, a second launch exits. Build it first.
       Presses Ctrl+Alt+N for real, but only while SayNote's own window is in front; otherwise those checks are skipped.
 app:  the real window, hotkey thread and Whisper in this process. Fires the hotkey by posting WM_HOTKEY to the hotkey thread
@@ -130,6 +131,22 @@ def test_pure(tmp):
     check("every microphone can be chosen", len({m["id"] for m in mics}), len(mics))
     check("the tray's recording icon can be made at tray sizes", all(saynote.recording_icon(s) for s in (16, 20, 24, 28, 32)), True)
 
+    np = saynote.np
+    check("names: one line, no commas, at most 40 characters", [saynote.clean_name(n) for n in ("  Linh  ", "Tony, Jr\n", "x" * 50, None)],
+          ["Linh", "Tony Jr", "x" * 40, ""])
+    check("meeting times", [saynote.clock(t) for t in (5, 65, 3725)], ["0:05", "1:05", "1:02:05"])
+    a, b = np.array([1, 0], "float32"), np.array([0, 1], "float32")
+    lines = saynote.team_lines([(0, "Hi.", a), (2, "Me too.", a), (5, "Yes.", b), (9, "Who?", np.array([.3, .3], "float32"))], {"Linh": a, "Minh": b})
+    check("sentences go to the closest voice; one person's in a row join; faint matches are Unknown", lines,
+          [["Linh", 0, "Hi. Me too."], ["Minh", 5, "Yes."], ["Unknown", 9, "Who?"]])
+    check("a team note's text", saynote.team_text(["Linh", "Minh"], lines[:2]), "Team note: Linh, Minh\n\nLinh (0:00): Hi. Me too.\n\nMinh (0:05): Yes.")
+    saynote.VOICES = Path(tmp) / "voices.json"
+    check("no voices file: no saved voices", saynote.load_voices(), {})
+    saynote.save_voices({"Linh": a})
+    check("voices come back as saved", {n: v.tolist() for n, v in saynote.load_voices().items()}, {"Linh": [1.0, 0.0]})
+    tone = (np.sin(np.arange(3 * saynote.RATE) / saynote.RATE * 2 * np.pi * 200) * .1).astype("float32")
+    check("a voice check hears speech, not silence", (saynote.heard_speech(np.zeros(3 * saynote.RATE, "float32")), saynote.heard_speech(tone)), (False, True))
+
 
 def test_update(tmp):
     real = saynote.REPO, saynote.VERSION
@@ -187,6 +204,39 @@ def _test_update(tmp):
            installed.exists() and installed.stat().st_mtime >= t0 + 1.5), (True, True, True))
 
 
+def resample(audio, speed):
+    """Faster and higher, or slower and lower: another-sounding person from the same voice."""
+    n = int(len(audio) / speed)
+    return saynote.np.interp(saynote.np.linspace(0, len(audio) - 1, n), saynote.np.arange(len(audio)), audio).astype("float32")
+
+
+def test_team(tmp):
+    from faster_whisper import WhisperModel
+    from faster_whisper.audio import decode_audio
+    np = saynote.np
+    people = {"Linh": ("Zira", 1.0), "Minh": ("David", 1.0), "Tony": ("David", 1.18), "An": ("Zira", 0.86)}
+    turns = [("Linh", "Okay, let's start. The main topic today is the release date."), ("Minh", "I think we can ship on Friday."),
+             ("Tony", "Testing is almost done. I found two small bugs yesterday."), ("An", "Are they serious, or can they wait?"),
+             ("Tony", "They can wait."), ("Minh", "Yes, agreed."), ("An", "I will write the release notes tomorrow morning.")]
+    wavs = tts([saynote.SENTENCE] + [line for _, line in turns])
+
+    def voice(who, i):
+        base, speed = people[who]
+        audio = decode_audio(os.path.join(wavs, f"{base}_{i}.wav"), sampling_rate=saynote.RATE)
+        return audio if speed == 1.0 else resample(audio, speed)
+    voices = {n: saynote.fingerprint(voice(n, 0)) for n in people}
+    gap = np.zeros(saynote.RATE // 2, "float32")
+    meeting = np.concatenate([part for i, (who, _) in enumerate(turns) for part in (voice(who, i + 1), gap)])
+    model = WhisperModel("small.en", device="cpu", compute_type="int8", cpu_threads=saynote.THREADS, local_files_only=True)
+    seen, start = [], time.time()
+    text = saynote.transcribe_team(model, "en", meeting, list(people), voices, seen.append)
+    shutil.rmtree(wavs, ignore_errors=True)
+    print(f"        {len(meeting) / saynote.RATE:.0f} s meeting in {time.time() - start:.1f} s:\n          " + text.replace("\n\n", "\n          "))
+    check("team: the note lists who was there", text.split("\n")[0], "Team note: Linh, Minh, Tony, An")
+    check("team: every line is named after who said it", [line.split(" (")[0] for line in text.split("\n\n")[1:]], [who for who, _ in turns])
+    check("team: progress is reported to the end", seen[-1] > .9, True)
+
+
 def test_exe(tmp):
     exe = ROOT / "dist" / "SayNote" / "SayNote.exe"
     env = dict(os.environ, SAYNOTE_DIR=str(Path(tmp) / "exe"), SAYNOTE_SETTINGS=str(Path(tmp) / "exe-settings.json"))
@@ -221,11 +271,12 @@ class Muted(list):
 def test_app(tmp):
     from faster_whisper.audio import decode_audio
     import faster_whisper
-    saynote.NOTES, saynote.SETTINGS = Path(tmp) / "app", Path(tmp) / "app-settings.json"
+    saynote.NOTES, saynote.SETTINGS, saynote.VOICES = Path(tmp) / "app", Path(tmp) / "app-settings.json", Path(tmp) / "app-voices.json"
     played, notified, pushed = [], [], []
     saynote.play = played.append  # the start and stop sounds: listed, not played
-    wavs = tts(["Buy milk and call the dentist on Friday."])
+    wavs = tts(["Buy milk and call the dentist on Friday.", saynote.SENTENCE, "We should ship the new version on Friday.", "I agree, the tests are done."])
     clip = decode_audio(os.path.join(wavs, "Zira_0.wav"), sampling_rate=16000)
+    said = {(v, i): decode_audio(os.path.join(wavs, f"{v}_{i}.wav"), sampling_rate=16000) for v in ("David", "Zira") for i in (1, 2, 3)}
     seen = {}
 
     def drive(app):
@@ -312,6 +363,17 @@ def test_app(tmp):
             seen["sounds"] = [c is saynote.START_CUE for c in played]
             app.set_setting("popup", True)
 
+            # A team meeting: Linh (Zira) and Minh (David) were voice-checked; the transcript names who said what
+            saynote.save_voices({"Linh": saynote.fingerprint(said["Zira", 1]), "Minh": saynote.fingerprint(said["David", 1])})
+            seen["meeting refused"] = [app.start_meeting(n)["ok"] for n in (["Linh"], ["Linh", "Nobody"], ["Linh", "linh"], "Linh, Minh")]
+            r = app.start_meeting(["Linh", "Minh"])
+            seen["meeting"] = (r["ok"], app.get_state()["team"])
+            gap = saynote.np.zeros(8000, "float32")
+            app.buf = Muted([saynote.np.concatenate([said["Zira", 2], gap, said["David", 3]])[:, None]])
+            fire_hotkey(app)
+            wait(lambda: not (app.stream or app.busy), 120, "the meeting's transcript")
+            seen["meeting note"] = saynote.list_notes()[0]["text"]
+
             # A language whose model can't be downloaded: back to the old one, with a message
             real = faster_whisper.WhisperModel
             def offline(*_, **__):
@@ -359,7 +421,7 @@ def test_app(tmp):
           ((True, "Ctrl+Alt+Shift+F11", True, "Ctrl+Alt+Shift+F11"), True))
     check("app: a shortcut another program holds is refused, the old one stays", seen.get("taken"), (True, False, True, "Ctrl+Alt+Shift+F11", True))
     check("app: shortcuts that aren't allowed are refused", seen.get("refused"), [False] * 4)
-    check("app: settings", seen.get("settings"), (["autostart", "hotkey", "language", "languages", "mic", "mics", "popup", "version"],
+    check("app: settings", seen.get("settings"), (["autostart", "hotkey", "language", "languages", "mic", "mics", "popup", "version", "voices"],
                                                  saynote.VERSION, True, None))
     check("app: wrong settings are refused", seen.get("bad settings"), [False] * 4)
     if "chosen mic records" in seen:
@@ -368,16 +430,22 @@ def test_app(tmp):
           (True, True, [True]))
     check("app: both tray icons are still alive (pystray must not destroy them)", seen.get("tray icons alive"), True)
     print(f"        Windows notifications it would have shown: {notified}")
+    check("app: a meeting needs 2+ different people, each voice-checked", seen.get("meeting refused"), [False] * 4)
+    check("app: a meeting records with its names in the state", seen.get("meeting"), (True, ["Linh", "Minh"]))
+    lines = seen.get("meeting note", "").split("\n\n")
+    print(f"        meeting note: {lines}")
+    check("app: the meeting's note names who said what", ([line.split(" (")[0] for line in lines], "ship" in seen.get("meeting note", "")),
+          (["Team note: Linh, Minh", "Linh", "Minh"], True))
     check("app: a language that can't be downloaded goes back to English and says so",
           (seen.get("language loading"), seen.get("language back"), any(m["type"] == "message" and "download" in m["text"] for m in pushed)),
           ((True, "loading"), ("en", "en", "en", None), True))
 
 
 if __name__ == "__main__":
-    which = sys.argv[1:] or ["pure", "update", "app"]
+    which = sys.argv[1:] or ["pure", "update", "team", "app"]
     tmp = tempfile.mkdtemp(prefix="saynote-test-")
     try:
-        for name in ("pure", "update", "exe", "app"):  # exe before app: the in-process app keeps the single-instance event open
+        for name in ("pure", "update", "team", "exe", "app"):  # exe before app: the in-process app keeps the single-instance event open
             if name in which:
                 print(f"--- {name}")
                 globals()[f"test_{name}"](tmp)

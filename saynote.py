@@ -14,10 +14,18 @@ import sounddevice as sd
 import webview
 from PIL import Image, ImageDraw
 
-VERSION = "1.2"
+VERSION = "1.3"
 REPO = "TonyLikeDev/SayNote"  # owner/name of the GitHub repo whose releases are SayNote's updates (their SayNote-Setup-<version>.exe). Empty: no updates
 THREADS, RATE = 4, 16000
 MIN_SECS, MAX_SECS = 0.4, 30 * 60  # shorter is a key bump; longer is a forgotten recording, stopped and saved
+# ponytail: a meeting's audio stays in memory (16-bit, about 115 MB an hour); stream it to a file if 3 hours isn't enough
+MAX_TEAM_SECS, TEAM_MAX, VOICE_SECS = 3 * 3600, 10, 8  # longest meeting, most people, length of a voice check
+SPEAKER_MIN = 0.4  # how alike a line and a saved voice must sound (0..1) to name it; below: "Unknown". Calibration knob
+SENTENCE = "The quick brown fox jumps over the lazy dog. I'm reading this so SayNote can learn how my voice sounds."
+# Turns a voice into a fingerprint (sherpa-onnx, 3D-Speaker CAM++). Trained on Chinese and English speech, it also told apart
+# the voices it was tested on best. Downloaded once, checked against this hash
+VOICE_MODEL = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
+VOICE_MODEL_SHA = "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2"
 LEVEL_FLOOR_DB, LEVEL_SPAN_DB = -55, 50  # mic meter: -55 dB shows as silence, -5 dB as full. Calibration knob for quiet or hot mics
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 MOD_KEYS = {"Ctrl": 0x2, "Alt": 0x1, "Shift": 0x4, "Win": 0x8}  # RegisterHotKey's MOD_ flags, in the order a shortcut is written
@@ -52,6 +60,7 @@ HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))  # bundle
 NOTES = Path(os.environ.get("SAYNOTE_DIR") or _documents() / "SayNote").absolute()  # the Recycle Bin call needs a full path
 LOG = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SayNote" / "saynote.log"
 SETTINGS = Path(os.environ.get("SAYNOTE_SETTINGS") or LOG.parent / "settings.json")
+VOICES = Path(os.environ.get("SAYNOTE_VOICES") or LOG.parent / "voices.json")  # voice fingerprints by name, on this PC only
 DEFAULTS = {"popup": True, "hotkey": "Ctrl+Alt+N", "mic": None, "language": "en"}
 
 
@@ -270,6 +279,102 @@ def play(cue):
         logging.exception("sound")
 
 
+def clean_name(name):
+    """A person's name as typed -> one line, no commas (a team note's first line lists names with them), at most 40 characters."""
+    return " ".join(re.sub(r"[,\r\n\t]", " ", str(name or "")).split())[:40]
+
+
+def load_voices():
+    """-> {name: fingerprint}. An unreadable file counts as no saved voices."""
+    try:
+        return {n: np.array(v, "float32") for n, v in json.loads(VOICES.read_text(encoding="utf-8")).items()}
+    except (OSError, ValueError, AttributeError, TypeError):
+        return {}
+
+
+def save_voices(voices):
+    VOICES.parent.mkdir(parents=True, exist_ok=True)
+    write_file(VOICES, json.dumps({n: [round(float(x), 6) for x in v] for n, v in sorted(voices.items())}))
+
+
+_voice_model, _voice_lock = None, threading.Lock()
+
+
+def voice_model():
+    """The speaker model, loaded once. The first time, it downloads (about 26 MB) to %LOCALAPPDATA%\\SayNote\\models."""
+    global _voice_model
+    with _voice_lock:
+        if _voice_model is None:
+            path = LOG.parent / "models" / VOICE_MODEL
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with _get(f"https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/{VOICE_MODEL}", 60) as r:
+                    data = r.read()
+                if hashlib.sha256(data).hexdigest() != VOICE_MODEL_SHA:
+                    raise OSError("the voice model download was damaged")
+                path.with_name(path.name + ".tmp").write_bytes(data)
+                os.replace(path.with_name(path.name + ".tmp"), path)
+            import sherpa_onnx
+            _voice_model = sherpa_onnx.SpeakerEmbeddingExtractor(sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(path), num_threads=THREADS))
+        return _voice_model
+
+
+def fingerprint(audio):
+    """Some speech -> its voice fingerprint, length 1, so two compare by a dot product (1: same voice)."""
+    model = voice_model()
+    stream = model.create_stream()
+    stream.accept_waveform(RATE, np.ascontiguousarray(audio, "float32"))
+    stream.input_finished()
+    v = np.array(model.compute(stream), "float32")
+    return v / (np.linalg.norm(v) or 1)
+
+
+def clock(secs):
+    m, s = divmod(int(secs), 60)
+    return f"{m // 60}:{m % 60:02}:{s:02}" if m >= 60 else f"{m}:{s:02}"
+
+
+def team_lines(segments, voices):
+    """[(start, text, fingerprint)] -> [[name, start, text]]: each sentence goes to the saved voice it sounds most like, or to
+    "Unknown" below SPEAKER_MIN. One person's sentences in a row become one line.
+    ponytail: a sentence that two people share goes to one of them; split at word times if that bites"""
+    lines = []
+    for start, text, v in segments:
+        scores = {n: float(f @ v) for n, f in voices.items()}
+        who = max(scores, key=scores.get) if scores else "Unknown"
+        if scores.get(who, 0) < SPEAKER_MIN:
+            who = "Unknown"
+        if lines and lines[-1][0] == who:
+            lines[-1][2] += " " + text
+        else:
+            lines.append([who, start, text])
+    return lines
+
+
+def team_text(names, lines):
+    """The note: who was there, then who said what, one paragraph each."""
+    return "\n\n".join([f"Team note: {', '.join(names)}"] + [f"{who} ({clock(t)}): {text}" for who, t, text in lines])
+
+
+def transcribe_team(model, lang, audio, names, voices, progress=lambda done: None):
+    """A meeting -> its note, or "" when nobody was heard."""
+    segs, _ = model.transcribe(audio, language=None if lang == "auto" else lang, vad_filter=True, condition_on_previous_text=False)
+    found, total = [], max(len(audio) / RATE, 1)
+    for seg in segs:
+        progress(min(seg.end / total, .99))
+        if text := seg.text.strip():
+            pad = max(0, 1 - (seg.end - seg.start)) / 2  # under a second of speech fingerprints badly: hear a little around it
+            clip = audio[int(max(0, seg.start - pad) * RATE):int((seg.end + pad) * RATE)]
+            found.append((seg.start, text, fingerprint(clip)))
+    return team_text(names, team_lines(found, {n: voices[n] for n in names if n in voices})) if found else ""
+
+
+def heard_speech(audio):
+    """Whether a voice check holds at least 2 s of sound well above silence (-40 dB, in 20 ms steps)."""
+    frames = audio[:len(audio) // 320 * 320].reshape(-1, 320)
+    return int((20 * np.log10(np.sqrt((frames ** 2).mean(axis=1)) + 1e-9) > -40).sum()) * 0.02 >= 2
+
+
 def recording_icon(size):
     """The tray icon at the tray's own size with a red dot: SayNote is listening. -> icon handle"""
     ico = Image.open(HERE / "saynote.ico")
@@ -399,6 +504,7 @@ class App:
         # loaded: (model, the language it's set up for), one attribute so a transcription never sees a model with another's language
         self.loaded, self.model_ready, self.model_problem = (None, None), threading.Event(), None
         self.stream, self.busy, self.buf, self.started, self.level, self.discarded = None, False, [], None, 0.0, None
+        self.team, self.progress, self.checking = None, None, False  # the meeting's names; how far its transcript is; a voice check runs
         self.quitting, self.told_tray, self.icon, self.tray_icons, self.hwnd = False, False, None, (None, None), None
         self.hotkey_ok, self.hotkey_thread, self.hotkey_done, self.picking = True, None, threading.Event(), False
         self.update, self.update_progress, self.told_update = None, None, None  # a newer release on GitHub; download progress
@@ -409,7 +515,8 @@ class App:
         # What the page can call, as plain functions named as in ui/preview.js. Not a js_api object: pywebview lets the page
         # call any dotted path under that, underscores included, so everything the object led to would be reachable
         self.window.expose(self.get_state, list_notes, self.toggle, self.discard, self.undo_discard, edit_note, delete_note,
-                           open_folder, self.get_settings, self.set_setting, self.pick_hotkey, self.check_update, self.install_update)
+                           open_folder, self.get_settings, self.set_setting, self.pick_hotkey, self.check_update, self.install_update,
+                           self.get_team, self.record_voice, self.forget_voice, self.start_meeting)
         self.window.events.before_show += self.hook_window
         self.window.events.shown += lambda: self.titlebar(dark)
 
@@ -523,7 +630,8 @@ class App:
         problem = self.model_problem or (None if self.hotkey_ok else f"{hotkey} is taken by another program, so the hotkey won't "
                                          "work. Pick another shortcut in Settings, or use the Start recording button.")
         return {"state": state, "problem": problem, "hotkey": hotkey, "hotkey_ok": self.hotkey_ok, "started": started,
-                "update": self.update and {"version": self.update["version"], "notes": self.update["notes"], "progress": self.update_progress}}
+                "update": self.update and {"version": self.update["version"], "notes": self.update["notes"], "progress": self.update_progress},
+                "team": self.team if self.stream or self.busy else None, "progress": self.progress if self.busy else None}
 
     def get_settings(self):
         with self.lock:  # PortAudio can only restart while no microphone is open
@@ -536,7 +644,8 @@ class App:
         return self.settings_view()
 
     def settings_view(self):
-        return {**self.settings, "mics": self.mics, "languages": LANGUAGES, "autostart": autostart(), "version": VERSION}
+        return {**self.settings, "mics": self.mics, "languages": LANGUAGES, "autostart": autostart(), "version": VERSION,
+                "voices": sorted(load_voices(), key=str.casefold)}
 
     def set_setting(self, key, value):
         """A change from the page's Settings. -> {ok, error, settings}"""
@@ -715,6 +824,8 @@ class App:
             if self.stream:
                 self._stop()
                 cue = STOP_CUE
+            elif self.checking:
+                self.say("Finish the voice check first.", "error")
             elif self.busy:  # one note at a time: say so, or the next press would start a recording you meant to stop
                 self.say("Still writing down your last note. Press again in a moment." if self.model_ready.is_set() else
                          "The speech model for your language is still downloading. Your note will be written when it's ready.", "error")
@@ -739,8 +850,8 @@ class App:
         self.say(f"{name} isn't connected, so this recording uses the Windows default microphone.", "error")
         return None
 
-    def _start(self):
-        self.buf, self.started, self.discarded = [], datetime.now(), None
+    def _start(self, team=None):
+        self.buf, self.started, self.discarded, self.team = [], datetime.now(), None, team
         try:
             self.stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", device=self.mic(), callback=self._audio)
             self.stream.start()
@@ -753,7 +864,7 @@ class App:
         threading.Thread(target=self._meter, args=(self.stream,), daemon=True).start()
 
     def _audio(self, data, *_):  # sounddevice's thread
-        self.buf.append(data.copy())
+        self.buf.append((np.clip(data[:, 0], -1, 1) * 32767).astype("<i2"))  # 16-bit: half the memory, for long meetings
         self.level = float(np.sqrt(np.mean(data * data)))
 
     def _meter(self, stream):
@@ -762,7 +873,7 @@ class App:
             db = 20 * np.log10(self.level + 1e-9)
             if self.outbox.empty():  # a slow page skips levels instead of falling behind on them
                 self.push({"type": "level", "level": round(min(1, max(0, (db - LEVEL_FLOOR_DB) / LEVEL_SPAN_DB)), 3)})
-            if datetime.now() - self.started > timedelta(seconds=MAX_SECS):
+            if datetime.now() - self.started > timedelta(seconds=MAX_TEAM_SECS if self.team else MAX_SECS):
                 with self.lock:
                     if self.stream is stream:
                         self._stop()
@@ -773,26 +884,28 @@ class App:
         self.stream.stop()
         self.stream.close()
         self.stream = None
-        return np.concatenate(self.buf)[:, 0] if self.buf else np.zeros(0, "float32")
+        audio = np.concatenate(self.buf).reshape(-1) if self.buf else np.zeros(0, "<i2")
+        return audio if audio.dtype == np.float32 else audio.astype("float32") / 32767
 
     def _stop(self):
-        self._save(self._end_stream(), self.started)
+        self._save(self._end_stream(), self.started, self.team)
 
-    def _save(self, audio, when):
+    def _save(self, audio, when, team=None):
+        self.team = team
         if len(audio) < MIN_SECS * RATE:
             self.say("Too short, nothing saved.")
             return self.push_state()
         self.busy = True
         self.push_state()
         # daemon=False outright, so quitting waits for it: a thread inherits daemon from its creator, and the hotkey thread is one
-        threading.Thread(target=self._write, args=(audio, when), daemon=False).start()
+        threading.Thread(target=self._write, args=(audio, when, team), daemon=False).start()
 
     def discard(self):
         """Stop recording without a note. The audio stays in memory for Undo until the next recording starts."""
         with self.lock:
             if not self.stream:
                 return False
-            self.discarded = (self._end_stream(), self.started)
+            self.discarded = (self._end_stream(), self.started, self.team)
             self.push_state()
         self.say("Recording thrown away.", undo=True)
         return True
@@ -801,17 +914,24 @@ class App:
         with self.lock:
             if not self.discarded or self.stream or self.busy or self.quitting:
                 return False
-            audio, when = self.discarded
+            audio, when, team = self.discarded
             self.discarded = None
-            self._save(audio, when)
+            self._save(audio, when, team)
         return True
 
-    def _write(self, audio, when):
+    def _write(self, audio, when, team=None):
         self.model_ready.wait()  # you may stop talking before the model has finished loading
         note = error = None
+        shown = -1
+
+        def progress(done):
+            nonlocal shown
+            if int(done * 100) != shown:  # a state push per percent
+                shown, self.progress = int(done * 100), done
+                self.push_state()
         try:
             model, lang = self.loaded
-            text = transcribe(model, audio, lang)
+            text = transcribe_team(model, lang, audio, team, load_voices(), progress) if team else transcribe(model, audio, lang)
             note = note_dict(save_note(text, when), text) if text else None
         except Exception as e:
             logging.exception("transcribe")
@@ -821,7 +941,7 @@ class App:
             except Exception:
                 error = f"Could not write the note: {e}"
         with self.lock:
-            self.busy = False
+            self.busy, self.progress = False, None
         if note:
             self.push({"type": "note", "note": note})
         else:
@@ -829,6 +949,85 @@ class App:
         self.push_state()
         if self.quitting:
             self.exit()
+
+    # ---- team notes
+    def get_team(self):
+        """-> {voices, sentence, seconds, max}: names with a saved voice, what a voice check reads, for how long, most people.
+        Also starts fetching the speaker model, so the first voice check doesn't wait for it."""
+        threading.Thread(target=self.warm_voice_model, daemon=True).start()
+        return {"voices": sorted(load_voices(), key=str.casefold), "sentence": SENTENCE, "seconds": VOICE_SECS, "max": TEAM_MAX}
+
+    def warm_voice_model(self):
+        try:
+            voice_model()
+        except Exception:  # offline: the voice check says so when it needs the model
+            logging.warning("voice model", exc_info=True)
+
+    def record_voice(self, name):
+        """The voice check: record VOICE_SECS of `name` reading SENTENCE and remember their voice. -> {ok, error}"""
+        name = clean_name(name)
+        if not name:
+            return {"ok": False, "error": "Type a name first."}
+        chunks, level = [], [0.0]
+
+        def heard(data, *_):  # sounddevice's thread
+            chunks.append(data[:, 0].copy())
+            level[0] = float(np.sqrt(np.mean(data * data)))
+        with self.lock:
+            if self.stream or self.busy or self.checking or self.quitting:
+                return {"ok": False, "error": "Finish the recording first."}
+            self.checking = True
+            try:
+                stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", device=self.mic(), callback=heard)
+                stream.start()
+            except Exception as e:
+                self.checking = False
+                return {"ok": False, "error": f"Microphone problem: {e}"}
+        try:
+            end = time.time() + VOICE_SECS
+            while time.time() < end:
+                db = 20 * np.log10(level[0] + 1e-9)
+                self.push({"type": "level", "level": round(min(1, max(0, (db - LEVEL_FLOOR_DB) / LEVEL_SPAN_DB)), 3)})
+                time.sleep(1 / 15)
+            stream.stop()
+            stream.close()
+            audio = np.concatenate(chunks) if chunks else np.zeros(0, "float32")
+            if not heard_speech(audio):
+                return {"ok": False, "error": "SayNote couldn't hear you. Check the microphone, then try again."}
+            voices = load_voices()
+            voices[name] = fingerprint(audio)
+            save_voices(voices)
+            return {"ok": True, "error": None}
+        except Exception as e:
+            logging.exception("voice check")
+            return {"ok": False, "error": f"The voice check didn't work: {e}"}
+        finally:
+            with suppress(Exception):
+                stream.close()
+            self.checking = False
+
+    def forget_voice(self, name):
+        voices = load_voices()
+        if voices.pop(name, None) is None:
+            return False
+        save_voices(voices)
+        return True
+
+    def start_meeting(self, names):
+        """Record a meeting whose transcript names who said what. names: the people there, each with a saved voice. -> {ok, error}"""
+        names = [clean_name(n) for n in names] if isinstance(names, list) else []
+        voices = load_voices()
+        if not 2 <= len(names) <= TEAM_MAX or not all(names) or len({n.casefold() for n in names}) < len(names):
+            return {"ok": False, "error": f"Name 2 to {TEAM_MAX} different people."}
+        if missing := [n for n in names if n not in voices]:
+            return {"ok": False, "error": f"{', '.join(missing)} still need{'s' if len(missing) == 1 else ''} a voice check."}
+        with self.lock:
+            if self.stream or self.busy or self.checking or self.quitting:
+                return {"ok": False, "error": "Finish the recording first."}
+            self._start(team=names)
+            if not self.stream:
+                return {"ok": False, "error": "The microphone didn't start."}
+        return {"ok": True, "error": None}
 
     # ---- window and tray
     def show(self):
