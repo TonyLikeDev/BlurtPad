@@ -1,8 +1,8 @@
 """SayNote: press Ctrl+Alt+N anywhere, talk, press it again. What you said is saved as a note.
 The window (ui/index.html in WebView2) shows your notes; closing it keeps SayNote running in the tray.
 Notes are plain .txt files in Documents\\SayNote, one per note, named by date and time. Windows only, CPU only.
-Dev run: .venv\\Scripts\\pythonw.exe saynote.py    Build and install the app: .\\build.ps1"""
-import ctypes, hashlib, io, json, logging, os, queue, re, shutil, string, subprocess, sys, tempfile, threading, time, urllib.request, wave, winreg, zipfile
+Run from source: .venv\\Scripts\\pythonw.exe saynote.py"""
+import base64, ctypes, hashlib, io, json, logging, os, queue, re, shutil, string, subprocess, sys, tempfile, threading, time, urllib.request, wave, winreg
 from contextlib import suppress
 from ctypes import wintypes
 from datetime import datetime, timedelta
@@ -15,7 +15,7 @@ import webview
 from PIL import Image, ImageDraw
 
 VERSION = "1.2"
-REPO = "TonyLikeDev/SayNote"  # owner/name of the GitHub repo whose releases are SayNote's updates (release.ps1 publishes them). Empty: no updates
+REPO = "TonyLikeDev/SayNote"  # owner/name of the GitHub repo whose releases are SayNote's updates (their SayNote-Setup-<version>.exe). Empty: no updates
 THREADS, RATE = 4, 16000
 MIN_SECS, MAX_SECS = 0.4, 30 * 60  # shorter is a key bump; longer is a forgotten recording, stopped and saved
 LEVEL_FLOOR_DB, LEVEL_SPAN_DB = -55, 50  # mic meter: -55 dB shows as silence, -5 dB as full. Calibration knob for quiet or hot mics
@@ -294,12 +294,12 @@ def version_tuple(v):
 
 def newer_release(release):
     """GitHub's 'latest release' JSON -> {version, notes, url, sha256} when it is newer than this SayNote and has its
-    SayNote-<version>.zip from this repo, else None."""
+    installer, SayNote-Setup-<version>.exe, from this repo. Else None."""
     v = version_tuple(release.get("tag_name"))
     if not v or v <= version_tuple(VERSION):
         return None
     version = ".".join(map(str, v))
-    asset = next((a for a in release.get("assets") or [] if a.get("name") == f"SayNote-{version}.zip"), None)
+    asset = next((a for a in release.get("assets") or [] if a.get("name") == f"SayNote-Setup-{version}.exe"), None)
     url = str((asset or {}).get("browser_download_url", ""))
     if not url.startswith(f"https://github.com/{REPO}/releases/download/"):
         return None
@@ -319,12 +319,12 @@ def latest_release():
 
 
 def download_update(release, progress=lambda done: None):
-    """Download and unpack a release into a fresh folder in %TEMP%. -> the new SayNote folder (the one with SayNote.exe)"""
-    root = Path(tempfile.gettempdir()) / "SayNote-update"
-    shutil.rmtree(root, ignore_errors=True)
-    root.mkdir()
-    zipped, sha = root / "update.zip", hashlib.sha256()
-    with _get(release["url"], 30) as r, open(zipped, "wb") as f:
+    """Download a release's installer into a fresh folder in %TEMP% and check it against GitHub's checksum. -> its path"""
+    folder = Path(tempfile.gettempdir()) / "SayNote-update"
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir()
+    setup, sha = folder / release["url"].rsplit("/", 1)[1], hashlib.sha256()
+    with _get(release["url"], 30) as r, open(setup, "wb") as f:
         total, done = int(r.headers.get("Content-Length") or 0), 0
         while chunk := r.read(1 << 20):
             f.write(chunk)
@@ -333,12 +333,19 @@ def download_update(release, progress=lambda done: None):
             progress(done / total if total else 0)
     if release["sha256"] and sha.hexdigest() != release["sha256"]:
         raise OSError("the download was damaged. Try again")
-    with zipfile.ZipFile(zipped) as z:
-        z.extractall(root)  # zipfile keeps entries inside root, whatever their names say
-    zipped.unlink()
-    if not (root / "SayNote" / "SayNote.exe").is_file():
-        raise OSError("the download doesn't contain SayNote")
-    return root / "SayNote"
+    return setup
+
+
+def install_after(pid, setup, exe):
+    """Hidden, in the background: once process pid has quit, run the installer without asking (it keeps the old version if it
+    fails), then start exe. -> the PowerShell process"""
+    text = lambda v: "'" + str(v).replace("'", "''") + "'"  # a PowerShell string
+    script = (f"Wait-Process -Id {pid} -Timeout 600 -ErrorAction SilentlyContinue; "
+              f"Start-Process -FilePath {text(setup)} -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait; "
+              f"Start-Process -FilePath {text(exe)}")
+    powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    return subprocess.Popen([str(powershell), "-NoProfile", "-NonInteractive", "-EncodedCommand", base64.b64encode(script.encode("utf-16-le")).decode()],
+                            creationflags=subprocess.CREATE_NO_WINDOW)
 
 
 def autostart_command():
@@ -659,7 +666,7 @@ class App:
         return {"update": self.get_state()["update"], "error": None}
 
     def install_update(self):
-        """Download the newer version, then quit: update.ps1 swaps it in and starts it. -> whether it started"""
+        """Download the newer version's installer, then quit: it installs and SayNote starts again. -> whether it started"""
         with self.lock:
             if not self.update or self.update_progress is not None:
                 return False
@@ -667,7 +674,7 @@ class App:
                 self.say("Finish your recording first, then update.", "error")
                 return False
             if not getattr(sys, "frozen", False):
-                self.say("Updates install into the built app. Run .\\build.ps1 to try this one.", "error")
+                self.say("Updates install into the installed SayNote, not one run from source.", "error")
                 return False
             self.update_progress = 0
         self.push_state()
@@ -683,13 +690,7 @@ class App:
                 shown, self.update_progress = int(done * 100), min(done, .99)
                 self.push_state()
         try:
-            folder = download_update(release, progress)
-            script = folder.parent / "update.ps1"  # run from %TEMP%, not from the folder it replaces
-            shutil.copyfile(HERE / "update.ps1", script)
-            powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-            subprocess.Popen([str(powershell), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-From", str(folder),
-                              "-To", str(Path(sys.executable).parent), "-ProcessId", str(os.getpid()), "-Version", release["version"]],
-                             creationflags=subprocess.CREATE_NO_WINDOW)
+            install_after(os.getpid(), download_update(release, progress), sys.executable)
         except Exception as e:
             logging.exception("update")
             self.update_progress = None

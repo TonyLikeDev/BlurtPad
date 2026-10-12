@@ -1,7 +1,7 @@
 """python tests/test_notes.py [pure] [exe] [app]      (no args = pure app)
 pure: note files, the delete guard, the Recycle Bin.
-update: offering, downloading (from a local server) and swapping in a new version, all in temp folders.
-exe:  the built dist\\SayNote\\SayNote.exe: it starts, the hotkey flips the title, a second launch exits. Run .\\build.ps1 first.
+update: offering a new version and downloading its installer (from a local server), in temp folders.
+exe:  the built dist\\SayNote\\SayNote.exe: it starts, the hotkey flips the title, a second launch exits. Build it first.
       Presses Ctrl+Alt+N for real, but only while SayNote's own window is in front; otherwise those checks are skipped.
 app:  the real window, hotkey thread and Whisper in this process. Fires the hotkey by posting WM_HOTKEY to the hotkey thread
       (no key presses) and swaps what the mic heard for a sentence from Windows' built-in TTS; nothing is played.
@@ -132,7 +132,6 @@ def test_pure(tmp):
 
 
 def test_update(tmp):
-    import functools, hashlib, http.server, zipfile
     real = saynote.REPO, saynote.VERSION
     saynote.REPO, saynote.VERSION = "me/SayNote", "1.2"
     try:
@@ -142,32 +141,30 @@ def test_update(tmp):
 
 
 def _test_update(tmp):
-    import functools, hashlib, http.server, zipfile
-    url = "https://github.com/me/SayNote/releases/download/v1.3/SayNote-1.3.zip"
-    release = {"tag_name": "v1.3", "body": " Pinned notes. ", "assets": [{"name": "SayNote-1.3.zip", "browser_download_url": url, "digest": "sha256:AB"}]}
+    import functools, hashlib, http.server
+    url = "https://github.com/me/SayNote/releases/download/v1.3/SayNote-Setup-1.3.exe"
+    release = {"tag_name": "v1.3", "body": " Pinned notes. ", "assets": [{"name": "SayNote-Setup-1.3.exe", "browser_download_url": url, "digest": "sha256:AB"}]}
     check("a newer release is offered", saynote.newer_release(release), {"version": "1.3", "notes": "Pinned notes.", "url": url, "sha256": "ab"})
     check("versions compare as numbers", (saynote.version_tuple("v1.10") > saynote.version_tuple("1.9"), saynote.version_tuple("beta")), (True, ()))
     not_offered = [dict(release, tag_name="v1.2"), dict(release, tag_name="v1.1"), dict(release, tag_name="nightly"), dict(release, assets=[]),
-                   dict(release, assets=[dict(release["assets"][0], browser_download_url="https://evil.example/SayNote-1.3.zip")])]
-    check("same, older, odd, zip-less or foreign releases are not offered", [saynote.newer_release(r) for r in not_offered], [None] * 5)
+                   dict(release, assets=[dict(release["assets"][0], browser_download_url="https://evil.example/SayNote-Setup-1.3.exe")])]
+    check("same, older, odd, installer-less or foreign releases are not offered", [saynote.newer_release(r) for r in not_offered], [None] * 5)
 
-    # download_update against a local server: a good zip unpacks to SayNote\SayNote.exe, a damaged one is refused
+    # download_update against a local server: the installer arrives whole, a damaged one is refused
     site = Path(tmp) / "site"
     site.mkdir()
-    with zipfile.ZipFile(site / "good.zip", "w") as z:
-        z.writestr("SayNote/SayNote.exe", "new exe")
-        z.writestr("SayNote/_internal/ui/index.html", "new page")
-    good = hashlib.sha256((site / "good.zip").read_bytes()).hexdigest()
+    (site / "SayNote-Setup-1.3.exe").write_bytes(os.urandom(3 << 20))
+    good = hashlib.sha256((site / "SayNote-Setup-1.3.exe").read_bytes()).hexdigest()
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
     handler.func.log_message = lambda *a: None
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base, seen = f"http://127.0.0.1:{server.server_port}", []
     try:
-        folder = saynote.download_update({"url": f"{base}/good.zip", "sha256": good}, seen.append)
-        check("a download unpacks to a SayNote folder", ((folder / "SayNote.exe").read_text(), seen[-1]), ("new exe", 1.0))
+        setup = saynote.download_update({"url": f"{base}/SayNote-Setup-1.3.exe", "sha256": good}, seen.append)
+        check("the installer downloads whole", (setup.name, hashlib.sha256(setup.read_bytes()).hexdigest() == good, seen[-1]), ("SayNote-Setup-1.3.exe", True, 1.0))
         try:
-            saynote.download_update({"url": f"{base}/good.zip", "sha256": "0" * 64})
+            saynote.download_update({"url": f"{base}/SayNote-Setup-1.3.exe", "sha256": "0" * 64})
             damaged = "accepted"
         except OSError as e:
             damaged = str(e)
@@ -175,27 +172,19 @@ def _test_update(tmp):
     finally:
         server.shutdown()
 
-    # update.ps1 swaps folders, and puts the old one back when it can't
-    def run_update(to, frm):
-        return subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "update.ps1"), "-From", str(frm),
-                               "-To", str(to), "-Version", "9.9", "-NoStart"], capture_output=True, timeout=120).returncode
-    app, new = Path(tmp) / "Programs" / "SayNote", Path(tmp) / "new" / "SayNote"
-    for folder, text in ((app, "old"), (new, "new")):
-        (folder / "_internal").mkdir(parents=True)
-        (folder / "SayNote.exe").write_text(text)
-    run_update(app, new)
-    check("update.ps1 swaps in the new version and removes the old", ((app / "SayNote.exe").read_text(), new.exists(), app.with_name("SayNote.old").exists()),
-          ("new", False, False))
-    (new / "_internal").mkdir(parents=True)
-    (new / "SayNote.exe").write_text("newer")
-    k32 = ctypes.WinDLL("kernel32")
-    k32.CreateFileW.restype = ctypes.c_void_p
-    held = k32.CreateFileW(str(app / "SayNote.exe"), 0x80000000, 1, None, 3, 0x80, None)  # open like a running exe: no delete, no rename
-    try:
-        run_update(app, new)
-    finally:
-        k32.CloseHandle(ctypes.c_void_p(held))
-    check("update.ps1 leaves the old version in place when it can't move it", ((app / "SayNote.exe").read_text(), (new / "SayNote.exe").exists()), ("new", True))
+
+    # The hand-off: waits for SayNote to quit, runs the installer silently, starts SayNote. Stand-ins log what ran and when
+    odd = Path(tmp) / "it's a folder"
+    odd.mkdir()
+    (odd / "setup.bat").write_text('echo %* > "%~dp0installed.txt"\n')
+    (odd / "start.bat").write_text('echo started > "%~dp0started.txt"\n')
+    t0 = time.time()
+    busy = subprocess.Popen(["ping", "-n", "3", "127.0.0.1"], stdout=subprocess.DEVNULL)  # SayNote, quitting in about 2 s
+    saynote.install_after(busy.pid, odd / "setup.bat", odd / "start.bat").wait(60)
+    installed, started = odd / "installed.txt", odd / "started.txt"
+    check("the hand-off waits for SayNote, installs silently, then starts it (odd paths too)",
+          (installed.exists() and "/VERYSILENT" in installed.read_text(), wait(started.exists, 10, "SayNote to start"),
+           installed.exists() and installed.stat().st_mtime >= t0 + 1.5), (True, True, True))
 
 
 def test_exe(tmp):
