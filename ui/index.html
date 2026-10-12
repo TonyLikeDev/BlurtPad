@@ -1,0 +1,1286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SayNote</title>
+<script src="preview.js"></script>
+<style>
+/* Windows 11 Fluent tokens. Base = the Mica-like window surface, layer = the content sheet. */
+:root {
+  color-scheme: light;
+  --base: #f3f3f3; --layer: #fafafa; --card: #fff;
+  --stroke: #e5e5e5; --ctl: #fff; --ctl-hover: #f9f9f9; --ctl-stroke: #e5e5e5; --ctl-edge: #ccc;
+  --text: #1b1b1b; --text-2: #5d5d5d;
+  --hover: rgba(0, 0, 0, .04); --selected: rgba(0, 0, 0, .06);
+  --accent: #005fb8; --accent-hover: #196ebf; --on-accent: #fff; --accent-text: #005fb8; --accent-soft: rgba(0, 95, 184, .11);
+  --rec: #d13438; --rec-hover: #bc2f32; --rec-bar: #d13438; --rec-text: #b8262b; --rec-soft: rgba(209, 52, 56, .09);
+  --crit-bg: #fde7e9; --crit-stroke: #f4c8cc; --crit: #c42b1c; --on-crit: #fff; --ok: #0f7b0f;
+  --scroll: rgba(0, 0, 0, .3); --scroll-hover: rgba(0, 0, 0, .45);
+  --shadow: 0 8px 16px rgba(0, 0, 0, .14), 0 0 2px rgba(0, 0, 0, .12);
+  --input: #fff; --mark: #ffe58a;  /* a text field being typed in; search matches in the note */
+  --focus: #1b1b1b;
+  --ease: cubic-bezier(0, 0, 0, 1);  /* Fluent "decelerate" */
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --base: #202020; --layer: #282828; --card: #2c2c2c;
+    --stroke: #333; --ctl: #2f2f2f; --ctl-hover: #353535; --ctl-stroke: #3a3a3a; --ctl-edge: #444;
+    --text: #fff; --text-2: #cfcfcf;
+    --hover: rgba(255, 255, 255, .05); --selected: rgba(255, 255, 255, .08);
+    --accent: #60cdff; --accent-hover: #5ab9e6; --on-accent: #000; --accent-text: #99ebff; --accent-soft: rgba(96, 205, 255, .13);
+    --rec: #d13438; --rec-hover: #bc2f32; --rec-bar: #f25f58; --rec-text: #ff8b84; --rec-soft: rgba(242, 95, 88, .13);
+    --crit-bg: #442726; --crit-stroke: #5a3332; --crit: #ff99a4; --on-crit: #000; --ok: #6ccb5f;
+    --scroll: rgba(255, 255, 255, .3); --scroll-hover: rgba(255, 255, 255, .5);
+    --shadow: 0 8px 16px rgba(0, 0, 0, .36), 0 0 2px rgba(0, 0, 0, .3);
+    --input: #1f1f1f; --mark: #6b5711;
+    --focus: #fff;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --base: #202020; --layer: #282828; --card: #2c2c2c;
+  --stroke: #333; --ctl: #2f2f2f; --ctl-hover: #353535; --ctl-stroke: #3a3a3a; --ctl-edge: #444;
+  --text: #fff; --text-2: #cfcfcf;
+  --hover: rgba(255, 255, 255, .05); --selected: rgba(255, 255, 255, .08);
+  --accent: #60cdff; --accent-hover: #5ab9e6; --on-accent: #000; --accent-text: #99ebff; --accent-soft: rgba(96, 205, 255, .13);
+  --rec: #d13438; --rec-hover: #bc2f32; --rec-bar: #f25f58; --rec-text: #ff8b84; --rec-soft: rgba(242, 95, 88, .13);
+  --crit-bg: #442726; --crit-stroke: #5a3332; --crit: #ff99a4; --on-crit: #000; --ok: #6ccb5f;
+  --scroll: rgba(255, 255, 255, .3); --scroll-hover: rgba(255, 255, 255, .5);
+  --shadow: 0 8px 16px rgba(0, 0, 0, .36), 0 0 2px rgba(0, 0, 0, .3);
+  --input: #1f1f1f; --mark: #6b5711;
+  --focus: #fff;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; overflow: hidden; background: var(--base); color: var(--text);
+  font: 14px/20px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  display: grid; grid-template-columns: clamp(264px, 30vw, 340px) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+  cursor: default; -webkit-user-select: none; user-select: none;  /* app chrome is not a document; note text stays selectable */
+}
+#r-body, #problem-text, #toast-text { -webkit-user-select: text; user-select: text; cursor: text; }
+::selection { background: var(--accent); color: var(--on-accent); }
+h1, h2, h3, p, ol, ul { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+button { font: inherit; color: inherit; cursor: default; }  /* Windows buttons keep the arrow; only links get the hand */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+:root:not(.kb) :focus-visible { outline: none; }  /* like Win32: focus rectangles appear once a key is pressed in the window */
+.ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.display { font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; }
+
+/* Windows 11 scrollbars: a thin line that thickens under the pointer */
+::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
+::-webkit-scrollbar-thumb { min-height: 40px; background: var(--scroll); background-clip: padding-box; border: 4px solid transparent; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active { background-color: var(--scroll-hover); border-width: 3px; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+kbd {
+  display: inline-block; min-width: 24px; padding: 0 6px; text-align: center;
+  font: 600 12px/20px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--text);
+  background: var(--ctl); border: 1px solid var(--ctl-stroke); border-bottom-color: var(--ctl-edge); border-radius: 4px;
+}
+/* Inline on purpose: innerText (and the app test) reads "Ctrl+Alt+N"; the "+" is spoken but takes no space */
+.keys { white-space: nowrap; }
+.keys .plus { font-size: 0; line-height: 0; }
+.keys kbd ~ kbd { margin-left: 3px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 32px; padding: 0 12px;
+  border-radius: 4px; background: var(--ctl); border: 1px solid var(--ctl-stroke); border-bottom-color: var(--ctl-edge);
+}
+.btn:hover { background: var(--ctl-hover); }
+.btn:active { color: var(--text-2); border-bottom-color: var(--ctl-stroke); }
+.link {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 0; border-radius: 4px;
+  background: transparent; color: var(--accent-text); cursor: pointer;
+}
+.link:hover { background: var(--hover); }
+.link:active { opacity: .8; }
+.icon-btn {
+  display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: 4px; background: transparent;
+}
+.icon-btn:hover { background: var(--hover); }
+.icon-btn:active, .icon-btn[aria-pressed="true"] { background: var(--selected); }
+.icon-btn:active .ic { opacity: .8; }
+
+/* Form controls: Windows 11 ToggleSwitch, ComboBox and TextBox */
+.sw {
+  appearance: none; position: relative; flex: none; width: 40px; height: 20px; margin: 0; border-radius: 10px;
+  border: 1px solid var(--text-2); background: transparent; transition: background-color 167ms, border-color 167ms;
+}
+.sw::before {
+  content: ""; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--text-2);
+  transition: transform 167ms var(--ease), background-color 167ms;
+}
+.sw:hover { background: var(--hover); }
+.sw:hover::before { transform: scale(1.17); }
+.sw:checked { background: var(--accent); border-color: var(--accent); }
+.sw:checked:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.sw:checked::before { background: var(--on-accent); transform: translateX(20px); }
+.sw:checked:hover::before { transform: translateX(20px) scale(1.17); }
+.sel { position: relative; display: block; width: 260px; max-width: 100%; }
+.sel::after {
+  content: ""; position: absolute; right: 14px; top: 50%; width: 6px; height: 6px; margin-top: -5px; pointer-events: none;
+  border: solid var(--text-2); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg);
+}
+select, #q {
+  width: 100%; height: 32px; font: inherit; color: var(--text); outline: none;
+  background: var(--ctl); border: 1px solid var(--ctl-stroke); border-bottom-color: var(--ctl-edge); border-radius: 4px;
+}
+select { appearance: none; padding: 0 34px 0 11px; text-overflow: ellipsis; }
+select:hover:not(:disabled), #q:hover { background: var(--ctl-hover); }
+select:disabled { color: var(--text-2); opacity: .55; }
+option { background: var(--card); color: var(--text); }
+:root.kb select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#q { padding: 0 34px 0 11px; }
+#q::placeholder { color: var(--text-2); opacity: 1; }
+#q:focus { background: var(--input); border-bottom-color: var(--accent); box-shadow: inset 0 -1px 0 var(--accent); }
+#q::-webkit-search-cancel-button {
+  -webkit-appearance: none; width: 16px; height: 16px; margin: 0 2px 0 6px; background: var(--text-2);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 4.5l7 7m0-7l-7 7' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px no-repeat;
+}
+#rec {
+  width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; gap: 10px;
+  border: 0; border-radius: 4px; font-weight: 600; background: var(--accent); color: var(--on-accent);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .25); transition: background-color 167ms;
+}
+#rec:hover { background: var(--accent-hover); }
+#rec:active { opacity: .85; }
+#rec .ic { width: 18px; height: 18px; }
+#rec[data-mode="rec"] { background: var(--rec); color: #fff; }
+#rec[data-mode="rec"]:hover { background: var(--rec-hover); }
+#rec:disabled { background: var(--ctl); color: var(--text-2); box-shadow: inset 0 0 0 1px var(--ctl-stroke); opacity: 1; }
+.ring {
+  width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid var(--stroke);
+  border-top-color: var(--accent); animation: spin .8s linear infinite;
+}
+.ring.small { width: 12px; height: 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Problem: a Windows 11 InfoBar across the top */
+#problem {
+  grid-column: 1 / -1; display: flex; gap: 12px; align-items: flex-start; margin: 8px; padding: 11px 16px;
+  background: var(--crit-bg); border: 1px solid var(--crit-stroke); border-radius: 4px; text-wrap: pretty;
+}
+#problem .ic { margin-top: 2px; color: var(--crit); }
+#problem p { flex: 1; }
+#problem .btn { flex: none; margin: -6px -8px -6px 0; }  /* the bar keeps its one-line height */
+
+/* Sidebar */
+aside { grid-row: 2; display: flex; flex-direction: column; min-height: 0; }
+.side-top { padding: 16px 12px 12px; }
+.hint { display: flex; align-items: baseline; justify-content: center; gap: 6px; margin-top: 10px; color: var(--text-2); font-size: 12px; }
+.list-head { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 24px 4px; }
+.list-head h2 { font-size: 14px; font-weight: 600; }
+#count { color: var(--text-2); font-size: 12px; }
+.search { position: relative; margin: 4px 12px 2px; }
+.search .ic { position: absolute; right: 10px; top: 8px; color: var(--text-2); pointer-events: none; }
+#list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 0 0 12px 12px; }
+#list, .list-head, .search, .hint { transition: opacity 250ms; }
+body[data-state="recording"] :is(#list, .list-head, .search), body[data-state="transcribing"] .hint { opacity: .38; }  /* notes stay readable while transcribing */
+.day {
+  position: sticky; top: 0; z-index: 1; padding: 12px 12px 4px; background: var(--base);
+  font-size: 12px; font-weight: 600; color: var(--text-2);
+}
+.item {
+  position: relative; display: block; width: 100%; margin: 1px 0; padding: 7px 12px 8px; text-align: left;
+  border: 0; border-radius: 4px; background: transparent; scroll-margin: 40px 0 8px;  /* clear the sticky day header */
+}
+.item:hover { background: var(--hover); }
+.item:active { background: var(--selected); }
+.item:focus-visible { outline-offset: -2px; }
+.item[aria-current="true"] { background: var(--selected); }
+.item[aria-current="true"]::before {
+  content: ""; position: absolute; left: 4px; top: 50%; width: 3px; height: 16px; margin-top: -8px; border-radius: 2px; background: var(--accent);
+}
+.item .time { display: block; font-size: 12px; line-height: 16px; color: var(--text-2); }
+.item .pv { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; margin-top: 2px; }
+.item.fresh { animation: fresh 2.4s var(--ease); }
+@keyframes fresh { 0%, 35% { background: var(--accent-soft); } }
+.no-notes { padding: 12px; color: var(--text-2); }
+.side-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 6px 12px 8px; border-top: 1px solid var(--stroke); }
+#loading { flex-basis: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 12px 4px; color: var(--text-2); font-size: 12px; }
+
+/* Update: a small card above the sidebar's footer */
+#update {
+  flex-basis: 100%; display: grid; gap: 8px; margin: 4px 0 6px; padding: 10px 12px 12px;
+  background: var(--card); border: 1px solid var(--stroke); border-radius: 6px; animation: enter 167ms var(--ease);
+}
+#up-title { font-weight: 600; outline: none; }
+#up-notes-box summary { width: max-content; color: var(--accent-text); font-size: 12px; cursor: pointer; }
+#up-notes { max-height: 120px; overflow-y: auto; margin-top: 4px; color: var(--text-2); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.up-prog { height: 4px; overflow: hidden; border-radius: 2px; background: var(--stroke); }
+.up-prog i { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform .3s var(--ease); }
+.btn.accent { background: var(--accent); color: var(--on-accent); border-color: transparent; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .25); }
+.btn.accent:hover { background: var(--accent-hover); }
+
+/* Content sheet: the Windows 11 layer with its rounded top-left corner */
+main {
+  grid-row: 2; position: relative; min-height: 0; overflow: hidden; background: var(--layer);
+  border: solid var(--stroke); border-width: 1px 0 0 1px; border-top-left-radius: 8px;
+}
+main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ease); }
+@keyframes enter { from { opacity: 0; } }
+
+/* Reader */
+.col { max-width: calc(66ch + 80px); margin: 0 auto; padding: 0 40px; font-size: 18px; }
+#reader { scrollbar-gutter: stable; }
+.r-head {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 20px 0 16px; background: var(--layer); border-bottom: 1px solid var(--stroke); font-size: 14px;
+}
+.r-head > div:first-child { min-width: 0; }  /* a long date wraps; Copy and Delete stay on the title row */
+#r-title, #s-title { font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -.01em; }
+.meta { display: flex; flex-wrap: wrap; gap: 0 12px; margin-top: 4px; color: var(--text-2); }
+#r-save.gone { opacity: 0; transition: opacity 600ms; }  /* "Saved" appears at once and fades on its own */
+#r-save.fail { color: var(--crit); }
+.actions { display: flex; gap: 8px; }
+/* The note is edited in place. At rest it reads like a page; the pointer and caret are the only hints until it's touched.
+   The negative margin keeps the text where it was, so the hover and focus fields grow outward. */
+#r-body {
+  margin: 12px -14px 48px; padding: 12px 14px 14px; border-radius: 6px; outline: none;
+  font-size: 18px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty;
+  transition: background-color 120ms;
+}
+#r-body:hover { background: var(--hover); }
+#r-body:focus { background: var(--input); box-shadow: inset 0 0 0 1px var(--ctl-stroke), inset 0 -2px 0 var(--accent); }
+#r-body.fresh { animation: rise 333ms var(--ease); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+::highlight(hit) { background-color: var(--mark); color: var(--text); }
+@media (max-width: 860px) {
+  .col { padding: 0 24px; }
+  #r-title, #s-title { font-size: 24px; }  /* "Wednesday, September 23" still fits beside the buttons at 720px */
+  .actions .btn { width: 32px; padding: 0; }
+  .actions .btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
+
+/* Settings: a page in the content sheet, like Windows 11 apps, so the record button and "Getting ready" stay in view */
+#settings { scrollbar-gutter: stable; }
+#settings .col { max-width: 800px; font-size: 14px; }
+.s-head { justify-content: flex-start; gap: 8px; }
+.s-head .icon-btn { margin-left: -6px; }
+.cards { display: grid; gap: 4px; padding-top: 24px; container-type: inline-size; }
+.card {
+  display: flex; align-items: center; gap: 8px 16px; min-height: 68px; padding: 12px 16px;
+  background: var(--card); border: 1px solid var(--stroke); border-radius: 4px;
+}
+.card > .ic { width: 20px; height: 20px; }
+.card .txt { flex: 1; min-width: 0; text-wrap: pretty; }
+.lbl { display: block; }
+.desc, .why, .err { margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--text-2); }
+.err { color: var(--crit); }
+.why:focus { outline: none; }
+.ctl { flex: none; display: flex; align-items: center; gap: 12px; }
+.ctl:has(> .sw)::before { content: "Off"; }
+.ctl:has(> .sw:checked)::before { content: "On"; }
+#hk-prompt { color: var(--accent-text); font-weight: 600; }
+/* While get_settings() re-reads the microphones, the controls are placeholders: values that might be wrong are never shown */
+#settings[aria-busy="true"] .ctl {
+  border-radius: 4px; background: var(--selected) content-box; animation: breathe 1.6s ease-in-out infinite;
+}
+#settings[aria-busy="true"] .ctl > *, #settings[aria-busy="true"] .ctl::before { visibility: hidden; }
+#s-error { margin-top: 24px; color: var(--crit); }
+.ver { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 20px 0 48px; color: var(--text-2); font-size: 12px; }
+.ver .link { margin-left: -4px; font-size: 12px; }
+@container (max-width: 540px) {  /* narrow window: wide controls drop under their label, as Windows' settings cards do */
+  .card.wide { flex-wrap: wrap; }
+  .card.wide > .ic { align-self: flex-start; }
+  .card.wide .txt { flex-basis: calc(100% - 36px); }
+  .card.wide .ctl { flex: 1 1 100%; padding-left: 36px; }
+  .card.wide .sel { width: 100%; }
+}
+
+/* Recording + transcribing stages. Recording is what pops up over other apps, so it scales with the window. */
+.stage { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+.pill {
+  display: inline-flex; align-items: center; gap: .55em; height: 2.3em; padding: 0 1em 0 .85em; border-radius: 99px;
+  background: var(--rec-soft); color: var(--rec-text); font-weight: 600; font-size: clamp(14px, 1.6vmin, 17px);
+}
+.dot { width: .55em; height: .55em; border-radius: 50%; background: var(--rec-bar); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+#elapsed {
+  margin: clamp(10px, 2vmin, 20px) 0 clamp(16px, 4vmin, 40px); font-size: clamp(56px, 13vmin, 136px); line-height: 1;
+  font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.bars {
+  display: flex; align-items: center; gap: clamp(3px, .5vmin, 6px); width: min(100%, 80vmin); height: clamp(88px, 20vmin, 200px);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%); mask-image: linear-gradient(90deg, transparent, #000 30%);
+}
+/* scaleY squashes corners too, so the vertical radius is pre-stretched by 1/v (.6vmin ~ half a bar's width):
+   the ends stay round and silence is a row of dots, while the level still animates as a composited transform */
+.bars i {
+  flex: 1; height: 100%; background: var(--rec-bar); border-radius: 50% / min(50%, calc(.6vmin / var(--v, .05)));
+  transform: scaleY(var(--v, .05)); transition: transform .1s ease-out;
+}
+.say { margin-top: clamp(20px, 4.5vmin, 48px); font-size: clamp(16px, 1.9vmin, 20px); line-height: 1.5; }
+.say .keys { margin: 0 2px; }
+.say kbd { font-size: .75em; line-height: 1.6; }
+.sub { margin-top: 6px; color: var(--text-2); font-size: clamp(14px, 1.6vmin, 16px); }
+#discard { margin-top: clamp(16px, 3.5vmin, 36px); }
+#discard .acc { margin-left: 2px; color: var(--text-2); font-size: 12px; }  /* the key, as Windows menus show it */
+.badge {
+  display: grid; place-items: center; width: clamp(64px, 9vmin, 96px); height: clamp(64px, 9vmin, 96px); margin-bottom: clamp(20px, 2.8vmin, 30px);
+  border-radius: 50%; background: var(--accent-soft); color: var(--accent-text);
+}
+.badge .ic { width: clamp(28px, 4vmin, 42px); height: clamp(28px, 4vmin, 42px); stroke-width: 1.3; }
+.stage h2 { font-size: clamp(20px, 3vmin, 32px); line-height: 1.4; font-weight: 600; }
+.prog { position: relative; width: clamp(240px, 30vmin, 400px); height: 4px; margin-top: clamp(28px, 4vmin, 44px); overflow: hidden; border-radius: 2px; background: var(--stroke); }
+.prog::before { content: ""; position: absolute; inset: 0; width: 40%; border-radius: 2px; background: var(--accent); animation: slide 1.8s cubic-bezier(.5, 0, .5, 1) -.7s infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes breathe { 50% { opacity: .35; } }
+
+/* Empty state */
+#empty { display: flex; }
+.empty { max-width: 500px; margin: auto; padding: 40px 40px 56px; }
+.empty h2 { font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: -.01em; }
+.empty > p { text-wrap: pretty; margin-top: 8px; color: var(--text-2); font-size: 15px; line-height: 22px; }
+.steps { margin-top: 28px; }
+.steps li { position: relative; display: grid; grid-template-columns: 32px 1fr; gap: 16px; padding-bottom: 24px; }
+.steps li:not(:last-child)::before { content: ""; position: absolute; left: 15.5px; top: 36px; bottom: 4px; width: 1px; background: var(--stroke); }
+.num {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent-text); font-weight: 600;
+}
+.steps strong { display: block; line-height: 32px; font-weight: 600; font-size: 15px; }
+.steps p { color: var(--text-2); }
+@media (min-width: 1400px) and (min-height: 880px) { .empty { zoom: 1.25; } }  /* a maximized window: keep the welcome in proportion */
+
+/* Toast: a small flyout above the content */
+#toast {
+  position: absolute; left: 50%; bottom: 24px; z-index: 5; display: flex; align-items: center; gap: 10px;
+  width: max-content; max-width: min(560px, calc(100% - 32px)); padding: 10px 16px 10px 12px; border-radius: 8px;
+  background: var(--card); border: 1px solid var(--stroke); box-shadow: var(--shadow);
+  transform: translateX(-50%); opacity: 0; visibility: hidden; transition: opacity 167ms, visibility 0s 167ms;
+}
+#toast.show { opacity: 1; visibility: visible; transition: none; animation: toast-in 250ms var(--ease); }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px); } }
+#toast .ic { width: 18px; height: 18px; }
+#toast.ok .ic { color: var(--ok); }
+#toast.info .ic { color: var(--accent-text); }
+#toast.error { background: var(--crit-bg); border-color: var(--crit-stroke); }
+#toast.error .ic { color: var(--crit); }
+#toast .link { height: 28px; margin: -4px -8px -4px 4px; padding: 0 10px; font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .ring { border-color: var(--accent); }
+  .prog::before { width: 100%; transform: none; animation: breathe 2s ease-in-out infinite !important; }
+}
+/* Windows contrast themes: fills become Canvas, so selection, meters and progress use system colours instead */
+@media (forced-colors: active) {
+  #rec, .pill { border: 1px solid ButtonText; }
+  #rec:not(:disabled):hover, .btn:hover { border-color: Highlight; }
+  #rec:disabled { border-color: GrayText; color: GrayText; }
+  .item[aria-current="true"], .item[aria-current="true"] .time { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  .item[aria-current="true"]::before { background: HighlightText; }
+  .bars i, .dot, .prog::before, .up-prog i { forced-color-adjust: none; background: Highlight; }
+  .ring { forced-color-adjust: none; border-color: transparent; border-top-color: Highlight; }
+  .sw { forced-color-adjust: none; border-color: ButtonText; background: Canvas; }
+  .sw::before { background: ButtonText; }
+  .sw:checked { background: Highlight; border-color: Highlight; }
+  .sw:checked::before { background: HighlightText; }
+  .sel::after { border-color: ButtonText; }
+  .icon-btn[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  #r-body:focus { outline: 2px solid Highlight; }
+  ::highlight(hit) { background-color: Mark; color: MarkText; }
+}
+</style>
+</head>
+<body data-state="loading">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 20 20"><rect x="7" y="2.5" width="6" height="10" rx="3"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 20 20"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="6.5" width="9.5" height="11" rx="2"/><path d="M13.5 4.2A1.6 1.6 0 0 0 12 3H5.2a1.7 1.7 0 0 0-1.7 1.7v8.1A1.6 1.6 0 0 0 4.7 14.4"/></symbol>
+  <symbol id="i-delete" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M5.2 5.5l.7 10.6a1.5 1.5 0 0 0 1.5 1.4h5.2a1.5 1.5 0 0 0 1.5-1.4l.7-10.6M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-note" viewBox="0 0 20 20"><path d="M15.5 9V5.5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2H9M6.5 7.5h6M6.5 10.5h4M6.5 13.5h2M16.6 11.4a1.3 1.3 0 0 1 0 1.9L12.5 17.4 10.5 18l.6-2 4.1-4.1a1.3 1.3 0 0 1 1.9 0z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 15V5A1.5 1.5 0 0 1 4 3.5h3.3l1.8 2H16A1.5 1.5 0 0 1 17.5 7v8a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 15z"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="m6.8 10.2 2.2 2.2 4.3-4.6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v4.5M10 6.6v.01"/></symbol>
+  <symbol id="i-error" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="currentColor" stroke="none"/><path d="M10 5.8v5M10 13.9v.01" style="stroke: var(--on-crit)" stroke-width="2"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path stroke-width="1.8" d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle stroke-width="1.8" cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-back" viewBox="0 0 20 20"><path d="M16.5 10H3.5M8.5 5l-5 5 5 5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 20 20"><circle cx="11.5" cy="8.5" r="5"/><path d="M7.9 12.1 3.5 16.5"/></symbol>
+  <symbol id="i-front" viewBox="0 0 20 20"><path d="M7 6.5V4.5a2 2 0 0 1 2-2h6.5a2 2 0 0 1 2 2V11a2 2 0 0 1-2 2h-2"/><rect x="2.5" y="6.5" width="11" height="11" rx="2"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 20 20"><rect x="1.5" y="4.5" width="17" height="11" rx="2"/><path d="M5 8h.01M8 8h.01M11 8h.01M14.5 8h.01M5 11.5h.01M14.5 11.5h.01M7.5 12h5"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15M10 2.5c-2 2.1-3 4.6-3 7.5s1 5.4 3 7.5c2-2.1 3-4.6 3-7.5s-1-5.4-3-7.5z"/></symbol>
+  <symbol id="i-power" viewBox="0 0 20 20"><path d="M10 2.5V9M5.8 5.4a6.5 6.5 0 1 0 8.4 0"/></symbol>
+</svg>
+
+<div id="problem" role="alert" hidden><svg class="ic" aria-hidden="true"><use href="#i-error"/></svg><p id="problem-text"></p><button class="btn" id="fix-hotkey" type="button" hidden>Change shortcut</button></div>
+
+<aside aria-label="Notes">
+  <div class="side-top">
+    <button id="rec" type="button"></button>
+    <p class="hint hk" id="hint"><span>or press</span><span class="keys" data-keys></span><span id="hint-tail">in any app</span></p>
+  </div>
+  <div class="list-head"><h2>Notes</h2><span id="count"></span></div>
+  <div class="search" id="search" role="search" hidden>
+    <input id="q" type="search" placeholder="Search notes" aria-label="Search notes" title="Search notes (Ctrl+F)" aria-keyshortcuts="Control+F" autocomplete="off" spellcheck="false">
+    <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+  </div>
+  <div id="list"></div>
+  <div class="side-foot">
+    <div id="update" role="region" aria-label="Update" hidden>
+      <p id="up-title" tabindex="-1"></p>
+      <details id="up-notes-box"><summary>What's new</summary><p id="up-notes"></p></details>
+      <div class="up-prog" id="up-prog" hidden><i id="up-fill"></i></div>
+      <button class="btn accent" id="up-go" type="button">Update</button>
+    </div>
+    <p id="loading" hidden><span class="ring small" aria-hidden="true"></span>Getting ready. You can already record.</p>
+    <button class="link" id="folder" type="button"><svg class="ic" aria-hidden="true"><use href="#i-folder"/></svg>Open notes folder</button>
+    <button class="icon-btn" id="gear" type="button" aria-label="Settings" title="Settings (Ctrl+,)" aria-keyshortcuts="Control+Comma" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg></button>
+  </div>
+</aside>
+
+<main>
+  <section id="reader" hidden aria-label="Selected note">
+    <div class="col">
+      <header class="r-head">
+        <div><h1 id="r-title" class="display"></h1><div class="meta"><p id="r-meta"></p><p id="r-save"></p></div></div>
+        <div class="actions">
+          <button class="btn" id="copy" type="button" title="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span>Copy</span></button>
+          <button class="btn" id="delete" type="button" title="Delete"><svg class="ic" aria-hidden="true"><use href="#i-delete"/></svg><span>Delete</span></button>
+        </div>
+      </header>
+      <div id="r-body" contenteditable="plaintext-only" role="textbox" aria-multiline="true" aria-label="Note text"></div>
+    </div>
+  </section>
+
+  <section id="settings" hidden aria-labelledby="s-title">
+    <div class="col">
+      <header class="r-head s-head">
+        <button class="icon-btn" id="s-back" type="button" aria-label="Back to notes" title="Back to notes (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-back"/></svg></button>
+        <h1 id="s-title" class="display">Settings</h1>
+      </header>
+      <p id="s-error" hidden>Couldn't load your settings. Go back and try again.</p>
+      <div class="cards" id="cards">
+        <div class="card">
+          <svg class="ic" aria-hidden="true"><use href="#i-front"/></svg>
+          <div class="txt">
+            <label class="lbl" for="s-popup">Bring SayNote to the front when you start recording</label>
+            <p class="desc" id="d-popup">When this is off, SayNote stays in the background: a short sound plays when it starts and stops listening, and the tray icon shows a red dot. Good for games and full-screen apps.</p>
+            <p class="err" id="e-popup" hidden></p>
+          </div>
+          <div class="ctl"><input class="sw" id="s-popup" type="checkbox" role="switch" aria-describedby="d-popup e-popup"></div>
+        </div>
+        <div class="card wide">
+          <svg class="ic" aria-hidden="true"><use href="#i-keyboard"/></svg>
+          <div class="txt">
+            <p class="lbl">Shortcut</p>
+            <p class="desc" id="d-hotkey">Starts and stops a recording from any app.</p>
+            <p class="err" id="e-hotkey" hidden></p>
+          </div>
+          <div class="ctl">
+            <span class="keys" id="hk-keys" data-keys></span><span id="hk-prompt" hidden>Press the new shortcut</span>
+            <button class="btn" id="hk-change" type="button" aria-describedby="hk-keys d-hotkey e-hotkey">Change<span class="sr"> shortcut</span></button>
+          </div>
+        </div>
+        <div class="card wide">
+          <svg class="ic" aria-hidden="true"><use href="#i-mic"/></svg>
+          <div class="txt">
+            <label class="lbl" for="s-mic">Microphone</label>
+            <p class="desc" id="d-mic">Windows default follows the input chosen in Windows sound settings.</p>
+            <p class="err" id="e-mic" hidden></p>
+          </div>
+          <div class="ctl"><span class="sel"><select id="s-mic" aria-describedby="d-mic e-mic"></select></span></div>
+        </div>
+        <div class="card wide">
+          <svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg>
+          <div class="txt">
+            <label class="lbl" for="s-lang">Language</label>
+            <p class="desc" id="d-lang">The language you speak. Anything other than English downloads a larger speech model (about 480 MB) the first time.</p>
+            <p class="why" id="w-lang" tabindex="-1" hidden>You can change this once SayNote is ready.</p>
+            <p class="err" id="e-language" hidden></p>
+          </div>
+          <div class="ctl"><span class="sel"><select id="s-lang" aria-describedby="d-lang w-lang e-language"></select></span></div>
+        </div>
+        <div class="card">
+          <svg class="ic" aria-hidden="true"><use href="#i-power"/></svg>
+          <div class="txt">
+            <label class="lbl" for="s-autostart">Start with Windows</label>
+            <p class="desc" id="d-autostart">SayNote waits in the tray, so your shortcut works right after you sign in.</p>
+            <p class="err" id="e-autostart" hidden></p>
+          </div>
+          <div class="ctl"><input class="sw" id="s-autostart" type="checkbox" role="switch" aria-describedby="d-autostart e-autostart"></div>
+        </div>
+      </div>
+      <div class="ver"><span id="s-ver"></span><button class="link" id="up-check" type="button">Check for updates</button><span id="up-status" role="status"></span></div>
+    </div>
+  </section>
+
+  <section id="recording" class="stage" hidden aria-label="Recording">
+    <span class="pill"><span class="dot" aria-hidden="true"></span>Recording</span>
+    <p id="elapsed" class="display">0:00</p>
+    <div class="bars" id="bars" aria-hidden="true"></div>
+    <p class="say" id="say"><span class="hk">Press <span class="keys" data-keys></span> again to save</span><span class="nohk" hidden>Click Stop and save when you're done</span></p>
+    <p class="sub">Take your time. Pauses are fine.</p>
+    <button class="btn" id="discard" type="button" aria-keyshortcuts="Escape"><svg class="ic" aria-hidden="true"><use href="#i-delete"/></svg>Discard<span class="acc" aria-hidden="true">Esc</span></button>
+  </section>
+
+  <section id="busy" class="stage" hidden aria-label="Transcribing">
+    <span class="badge" aria-hidden="true"><svg class="ic"><use href="#i-note"/></svg></span>
+    <h2 class="display">Writing down what you said…</h2>
+    <p class="sub">You can keep working. Your note will open here.</p>
+    <div class="prog" aria-hidden="true"></div>
+  </section>
+
+  <section id="empty" hidden aria-label="Getting started">
+    <div class="empty">
+      <h2 class="display">Make your first voice note</h2>
+      <p class="hk">SayNote listens from any app, even when this window is closed.</p>
+      <p class="nohk" hidden>Use the button on the left to start and stop.</p>
+      <ol class="steps">
+        <li><span class="num">1</span><div><strong><span class="hk">Press <span class="keys" data-keys></span></span><span class="nohk" hidden>Click Start recording</span></strong><p>SayNote starts listening.</p></div></li>
+        <li><span class="num">2</span><div><strong>Talk</strong><p>Say what's on your mind. Pause to think whenever you like.</p></div></li>
+        <li><span class="num">3</span><div><strong><span class="hk">Press <span class="keys" data-keys></span> again</span><span class="nohk" hidden>Click Stop and save</span></strong><p>What you said is written down and saved here.</p></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <div id="toast" aria-hidden="true"><svg class="ic" aria-hidden="true"><use href="#i-ok"/></svg><span id="toast-text"></span><button class="link" id="undo" type="button" aria-keyshortcuts="Control+Z" aria-describedby="toast-text" hidden>Undo</button></div>
+</main>
+<p class="sr" id="live" aria-live="polite"></p>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id)
+  const DAY = 864e5, BARS = 48
+  let api = null, loaded = false, statePushed = false, hotkey = 'Ctrl+Alt+N', hotkeyOk = true
+  let st = { state: 'loading', problem: null, started: null }
+  let notes = [], selId = null, shownId = null, freshId = null, deleting = null, levels = [], clock = null, toastTimer = null
+  let peek = false  // a note was picked during this state, so a long transcription doesn't hide the notes
+  const pushed = []  // ids that arrived by a 'note' push, so a slower list_notes() never drops them
+  let today = new Date().toDateString()
+  let query = '', queryRe = null, keepId = null, countTimer = null  // keepId: a note that arrived mid-search stays in the list
+  const drafts = new Map(), failed = new Set()  // id -> edited text not saved yet; ids whose last save failed
+  let saveTimer = null, saveChain = Promise.resolve(), savedTimer = null, saves = 0  // saves: edits that went through
+  let toastUndo = false, discarding = false
+  let setOpen = false, sets = null, setsReq = 0, afterLoad = null, opener = null, capturing = false
+
+  // ---- formatting ----
+  const dayStart = (t) => new Date(t).setHours(0, 0, 0, 0)
+  const daysAgo = (t) => Math.round((dayStart(Date.now()) - dayStart(t)) / DAY)
+  const sameYear = (t) => new Date(t).getFullYear() === new Date().getFullYear()
+  const fmtTime = (t) => new Date(t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  function dayLabel(t) {
+    const d = daysAgo(t)
+    if (d <= 0) return 'Today'
+    if (d === 1) return 'Yesterday'
+    if (d < 7) return new Date(t).toLocaleDateString('en-US', { weekday: 'long' })
+    return new Date(t).toLocaleDateString('en-US', sameYear(t) ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+  // An older note's year matters more than its weekday, and both together crowd Copy and Delete off the title row
+  const fullDate = (t) => new Date(t).toLocaleDateString('en-US', sameYear(t) ? { weekday: 'long', month: 'long', day: 'numeric' } : { month: 'long', day: 'numeric', year: 'numeric' })
+  const words = (s) => (s.trim().match(/\S+/g) || []).length
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+  const icon = (name) => `<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`  // static markup only, never note text
+  const quiet = (p) => Promise.resolve(p).catch(() => {})
+  // Focus that sits on <body> or inside a view that just hid has nowhere to go: the caller puts it somewhere useful
+  const lost = () => { const a = document.activeElement; return !a || a === document.body || !!a.closest('[hidden]') }
+  const home = () => ($('list').querySelector('.item[tabindex="0"]') || (queryRe ? $('q') : $('rec'))).focus()
+  const editable = (t) => t.isContentEditable || t === $('q')
+  const typing = () => document.activeElement === $('r-body') && document.hasFocus()
+  // Search ignores case and accents, so "ca phe" finds "cà phê". đ has no decomposition, so it's folded by hand.
+  const fold = (s) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/đ/g, 'd')
+
+  function announce(text) {
+    $('live').textContent = ''
+    setTimeout(() => { $('live').textContent = text }, 50)
+  }
+
+  // A toast with Undo is a real control, so it can't be hidden from screen readers; plain ones speak through #live only
+  function toast(text, kind = 'ok', undo = false) {
+    const t = $('toast')
+    t.className = kind
+    t.querySelector('use').setAttribute('href', '#i-' + (kind === 'error' ? 'error' : kind === 'info' ? 'info' : 'ok'))
+    $('toast-text').textContent = text
+    if (!undo && t.contains(document.activeElement)) home()  // a plain toast replaces one whose Undo had focus
+    $('undo').hidden = !undo
+    toastUndo = undo
+    if (undo) t.removeAttribute('aria-hidden'); else t.setAttribute('aria-hidden', 'true')
+    void t.offsetWidth  // restart the entrance when a toast replaces another
+    t.classList.add('show')
+    armToast()
+    announce(undo ? text + ' Press Ctrl+Z to undo.' : text)
+  }
+  // It waits while the pointer or focus is on it, so Undo can't slip away mid-reach
+  function armToast() {
+    clearTimeout(toastTimer)
+    const t = $('toast')
+    if (!t.matches(':hover, :focus-within')) toastTimer = setTimeout(hideToast, toastUndo ? 8000 : t.classList.contains('error') ? 6000 : 3000)
+  }
+  function hideToast() {
+    clearTimeout(toastTimer)
+    if ($('toast').contains(document.activeElement)) home()  // Undo is about to vanish
+    $('toast').classList.remove('show')
+    toastUndo = false
+  }
+
+  function renderKeys(box, keys) {
+    box.textContent = ''
+    keys.forEach((k, i) => box.append(...(i ? [el('span', 'plus', '+')] : []), el('kbd', null, k)))
+  }
+  const fillKeys = () => document.querySelectorAll('[data-keys]').forEach((box) => renderKeys(box, hotkey.split('+')))
+
+  // ---- state ----
+  function applyState(s) {
+    const prev = st.state
+    st = { state: s.state || 'idle', problem: s.problem || null, started: s.started || null }
+    if (st.state === 'recording' && !st.started) st.started = Date.now()
+    if (s.hotkey && s.hotkey !== hotkey) { hotkey = s.hotkey; fillKeys() }
+    hotkeyOk = s.hotkey_ok !== false
+    const rec = st.state === 'recording', busy = st.state === 'transcribing'
+    if (st.state !== prev) peek = false
+    document.body.dataset.state = st.state
+    if (rec) { endCapture(); save() }  // the reader and settings make way for the recording stage
+    if (rec && toastUndo) hideToast()  // a new recording ends the chance to undo the last one
+
+    const b = $('rec'), mode = rec ? 'rec' : busy ? 'busy' : 'idle'
+    if (b.dataset.mode !== mode) {
+      b.dataset.mode = mode
+      b.disabled = busy
+      b.innerHTML = busy ? '<span class="ring" aria-hidden="true"></span>' : icon(rec ? 'stop' : 'mic')
+      b.append(rec ? 'Stop and save' : busy ? 'Writing it down…' : 'Start recording')
+    }
+    $('hint-tail').textContent = rec ? 'again' : 'in any app'
+    // The hotkey hints only hold while Ctrl+Alt+N is ours; otherwise the page talks about the button
+    document.querySelectorAll('.hk, .nohk').forEach((e) => { e.hidden = e.classList.contains('hk') !== hotkeyOk })
+    $('fix-hotkey').hidden = hotkeyOk
+
+    $('loading').hidden = st.state !== 'loading'
+    showUpdate(s.update)
+    syncLang()
+    $('problem').hidden = !st.problem
+    // role=alert re-announces on every write, so only write a new sentence
+    if ($('problem-text').textContent !== (st.problem || '')) $('problem-text').textContent = st.problem || ''
+    $('list').inert = $('search').inert = rec
+
+    clearInterval(clock)
+    if (rec) {
+      if (prev !== 'recording') { levels = []; for (const i of $('bars').children) i.style.removeProperty('--v') }
+      tick()
+      clock = setInterval(tick, 500)
+    }
+    if (rec && prev !== 'recording') announce(hotkeyOk ? `Recording. Press ${hotkey} again to save.` : "Recording. Click Stop and save when you're done.")
+    if (busy && prev !== 'transcribing') announce('Writing down what you said.')
+    showView()
+    // The inert list (recording) and the disabled #rec (transcribing) drop focus to <body>. Put it back on the selected
+    // note as soon as the list is usable again, including "Too short, nothing saved." (recording straight to idle).
+    if (st.state !== prev && (prev === 'recording' || prev === 'transcribing') && !rec && lost()) {
+      const b = setOpen ? $('s-back') : $('list').querySelector('.item[tabindex="0"]')
+      if (b) b.focus(); else if (!busy) $('rec').focus()
+    }
+  }
+
+  function tick() {
+    const s = Math.max(0, Math.floor((Date.now() - st.started) / 1000))
+    const t = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+    if ($('elapsed').textContent !== t) $('elapsed').textContent = t
+  }
+
+  function onLevel(v) {
+    if (st.state !== 'recording') return
+    levels.push(Math.min(1, Math.max(0, Number(v) || 0)))
+    if (levels.length > BARS) levels.shift()
+    const bars = $('bars').children, off = BARS - levels.length
+    for (let i = 0; i < levels.length; i++) bars[off + i].style.setProperty('--v', Math.min(1, 0.05 + levels[i] * 1.4).toFixed(3))
+  }
+
+  function showView() {
+    const v = st.state === 'recording' ? 'recording' : setOpen ? 'settings' : st.state === 'transcribing' && !(peek && notes.length) ? 'busy'
+      : !loaded ? null : notes.length ? 'reader' : 'empty'
+    for (const id of ['reader', 'settings', 'recording', 'busy', 'empty']) {
+      const s = $(id), show = id === v
+      if (s.hidden === show) s.hidden = !show
+    }
+  }
+
+  // ---- notes ----
+  const current = () => notes.find((n) => n.id === selId)
+  const sortNotes = () => notes.sort((a, b) => b.created - a.created)
+  const textOf = (n) => drafts.has(n.id) ? drafts.get(n.id) : n.text || ''
+  const preview = (n) => textOf(n).replace(/\s+/g, ' ').trim().slice(0, 180) || 'Empty note'
+  const shown = () => queryRe ? notes.filter((n) => n.id === keepId || fold(textOf(n)).search(queryRe) >= 0) : notes
+
+  function renderList() {
+    const list = $('list'), hadFocus = list.contains(document.activeElement), vis = shown()
+    list.textContent = ''
+    $('count').textContent = !notes.length ? '' : (queryRe ? vis.length + ' of ' : '') + notes.length + (notes.length === 1 ? ' note' : ' notes')
+    $('search').hidden = !notes.length && !query
+    if (!notes.length) { if (loaded) list.append(el('p', 'no-notes', 'Your notes will appear here.')); return }
+    if (!vis.length) list.append(el('p', 'no-notes', `No notes match “${query.trim()}”.`))
+    let label = null, ul = null
+    for (const n of vis) {
+      const l = dayLabel(n.created)
+      if (l !== label) {
+        const sec = el('section')
+        sec.append(el('h3', 'day', l), (ul = el('ul')))
+        list.append(sec)
+        label = l
+      }
+      const b = el('button', 'item')
+      b.type = 'button'
+      b.dataset.id = n.id
+      b.append(el('span', 'time', fmtTime(n.created)), el('span', 'pv', preview(n)))
+      if (n.id === freshId) b.classList.add('fresh')
+      const li = el('li')
+      li.append(b)
+      ul.append(li)
+    }
+    markSelected()
+    if (hadFocus) list.querySelector('.item[tabindex="0"]')?.focus({ preventScroll: true })
+  }
+
+  function markSelected() {
+    const items = [...document.querySelectorAll('#list .item')]
+    for (const b of items) {
+      const on = b.dataset.id === selId
+      b.setAttribute('aria-current', on)
+      b.tabIndex = on ? 0 : -1
+    }
+    if (items.length && !items.some((b) => b.tabIndex === 0)) items[0].tabIndex = 0
+  }
+
+  function renderMeta(n) {
+    const d = daysAgo(n.created), w = words(textOf(n))
+    $('r-meta').textContent = `${d <= 0 ? 'Today at ' : d === 1 ? 'Yesterday at ' : ''}${fmtTime(n.created)} · ${w} ${w === 1 ? 'word' : 'words'}`
+  }
+
+  function renderReader() {
+    const n = current()
+    if (!n) return
+    const body = $('r-body')
+    if (shownId !== n.id) {
+      if (shownId) save(shownId)  // the old note's draft is kept until its save goes through
+      shownId = n.id
+      body.textContent = textOf(n)
+      $('reader').scrollTop = 0  // keep the reading position when the same note re-renders
+      saveStatus(failed.has(n.id) ? 'fail' : '')
+    } else if (document.activeElement !== body) body.textContent = textOf(n)  // never rewrite text under the caret
+    $('r-title').textContent = fullDate(n.created)
+    renderMeta(n)
+    body.classList.toggle('fresh', n.id === freshId)
+    mark()
+  }
+
+  // Search matches in the open note, with the CSS Custom Highlight API: no markup goes into the editable text
+  function mark() {
+    if (!window.Highlight) return
+    const ranges = []
+    if (queryRe) {
+      const walk = document.createTreeWalker($('r-body'), NodeFilter.SHOW_TEXT), at = []  // folded char -> [text node, offset]
+      let s = ''
+      for (let t; (t = walk.nextNode());) {
+        for (let i = 0; i < t.data.length; i++) { const f = fold(t.data[i]); s += f; for (let k = 0; k < f.length; k++) at.push([t, i]) }
+      }
+      for (const m of s.matchAll(queryRe)) {
+        const a = at[m.index], z = at[m.index + m[0].length - 1], r = new Range()
+        r.setStart(a[0], a[1])
+        r.setEnd(z[0], z[1] + 1)
+        ranges.push(r)
+      }
+    }
+    CSS.highlights.set('hit', new Highlight(...ranges))
+  }
+
+  function select(id, focus) {
+    if (!id) return
+    if (setOpen) closeSettings()
+    selId = id
+    peek = true
+    markSelected()
+    renderReader()
+    showView()
+    const b = document.querySelector('#list .item[aria-current="true"]')
+    if (b) { if (focus) b.focus(); b.scrollIntoView({ block: 'nearest' }) }
+  }
+
+  function addNote(n) {
+    if (!n || !n.id) return
+    pushed.push(n.id)
+    notes = notes.filter((x) => x.id !== n.id)
+    notes.push(n)
+    sortNotes()
+    if (queryRe) keepId = n.id  // a search must not hide what was just said
+    freshId = n.id
+    if (typing()) {  // someone is mid-sentence in another note: the new one waits at the top of the list
+      renderList()
+      freshId = null
+      return toast('Note saved')
+    }
+    if (setOpen) closeSettings()
+    selId = n.id
+    renderList()
+    select(n.id, lost())
+    freshId = null
+    showView()
+    toast('Note saved')
+  }
+
+  async function del(id, fromList) {
+    if (!id || deleting === id || !api) return
+    deleting = id
+    await save(id)  // an edit still on its way must land before the file goes, or it would write the file back
+    let ok = false
+    try { ok = await api.delete_note(id) } catch (e) { ok = false }
+    deleting = null
+    if (!ok) return toast("Couldn't delete this note.", 'error')
+    drafts.delete(id)
+    failed.delete(id)
+    const vis = shown(), vi = vis.findIndex((n) => n.id === id), i = notes.findIndex((n) => n.id === id)
+    if (i < 0) return
+    notes.splice(i, 1)
+    if (selId === id) {
+      const rest = vis.filter((n) => n.id !== id)
+      selId = (rest[Math.min(Math.max(vi, 0), rest.length - 1)] || notes[0] || {}).id || null
+    }
+    renderList()
+    renderReader()
+    showView()
+    if (fromList && selId) select(selId, true)
+    if (lost()) home()  // the last note, or the last search match, is gone
+    toast('Moved to Recycle Bin')
+  }
+
+  // Notes are plain .txt files people may edit or delete in Explorer: re-read them when the window comes back
+  function reload() {
+    if (!api || !loaded) return
+    const since = pushed.length, gen = saves
+    api.list_notes().then((list) => {
+      if (gen !== saves) return reload()  // an edit landed while Python read the files: this list may hold the old text
+      list = [...(list || [])]
+      const keep = pushed.slice(since)
+      if (shownId && (drafts.has(shownId) || typing())) keep.push(shownId)  // a note being edited outlives its file until it's saved
+      for (const id of keep) if (!list.some((n) => n.id === id)) list.push(notes.find((n) => n.id === id))
+      list = list.filter(Boolean).sort((a, b) => b.created - a.created)
+      const sig = (l) => l.map((n) => n.id + '\n' + n.text).join('\0')
+      if (sig(list) === sig(notes)) return
+      notes = list
+      if (!current()) selId = (shown()[0] || notes[0] || {}).id || null
+      renderList()
+      renderReader()
+      showView()
+    }, () => {})
+  }
+
+  // ---- editing ----
+  // Edits save themselves: 800 ms after typing stops, on blur, before another note shows, and when the page hides.
+  // Saves run one at a time, so an older text can never land after a newer one.
+  function save(id = shownId) {
+    if (id === shownId) clearTimeout(saveTimer)
+    if (!api || !drafts.has(id)) return saveChain
+    return (saveChain = saveChain.then(async () => {
+      const text = drafts.get(id)
+      if (text == null) return
+      let ok = false
+      try { ok = await api.edit_note(id, text) } catch (e) { ok = false }
+      const n = notes.find((x) => x.id === id)
+      if (ok) {
+        saves++
+        if (drafts.get(id) === text) drafts.delete(id)
+        failed.delete(id)
+        if (n) n.text = text
+      } else {
+        if (id !== shownId && !failed.has(id)) toast("Couldn't save your change to a note. Open it to try again.", 'error')
+        failed.add(id)
+      }
+      const pv = n && $('list').querySelector(`.item[data-id="${CSS.escape(id)}"] .pv`)
+      if (pv) pv.textContent = preview(n)
+      if (n && id === shownId) { renderMeta(n); saveStatus(ok ? 'saved' : 'fail') }
+    }))
+  }
+
+  function saveStatus(kind) {
+    const s = $('r-save')
+    clearTimeout(savedTimer)
+    if (kind === 'fail' && s.className !== 'fail') announce("Couldn't save the note. Your change is still here.")  // once, not on every retry
+    s.className = kind
+    s.textContent = kind === 'saved' ? 'Saved' : kind === 'fail' ? "Couldn't save, your change is still here" : ''
+    if (kind === 'saved') savedTimer = setTimeout(() => s.classList.add('gone'), 1600)
+  }
+
+  // ---- search ----
+  function onSearch() {
+    query = $('q').value
+    const parts = fold(query).trim().split(/\s+/).filter(Boolean)
+    queryRe = parts.length ? new RegExp(parts.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'g') : null
+    keepId = null
+    const vis = shown()
+    if (vis.length && !vis.some((n) => n.id === selId)) { selId = vis[0].id; peek = true }
+    renderList()
+    renderReader()
+    showView()
+    $('list').querySelector('.item[aria-current="true"]')?.scrollIntoView({ block: 'nearest' })
+    clearTimeout(countTimer)
+    if (queryRe) countTimer = setTimeout(() => announce(vis.length ? $('count').textContent : 'No notes match.'), 700)
+  }
+
+  // ---- updates ----
+  // update: null, or {version, notes, progress}: progress null = available, 0..1 = downloading, 1 = installing (SayNote restarts)
+  let upd = null, checking = false
+  function showUpdate(u) {
+    const was = upd
+    upd = u || null
+    $('update').hidden = !upd
+    if (!upd) return
+    const p = upd.progress, busy = p != null
+    const title = !busy ? `SayNote ${upd.version} is available` : p >= 1 ? 'Installing. SayNote will reopen in a moment.'
+      : `Downloading SayNote ${upd.version}… ${Math.round(p * 100)}%`
+    if ($('up-title').textContent !== title) $('up-title').textContent = title
+    if ($('up-notes').textContent !== (upd.notes || '')) $('up-notes').textContent = upd.notes || ''
+    $('up-notes-box').hidden = !upd.notes || busy
+    $('up-prog').hidden = !busy
+    $('up-fill').style.transform = `scaleX(${busy ? Math.max(0.02, p) : 0})`
+    if (busy && document.activeElement === $('up-go')) $('up-title').focus()  // the button is about to hide
+    $('up-go').hidden = busy
+    if (!was || was.version !== upd.version) announce(`SayNote ${upd.version} is available.`)
+    if (busy && p >= 1 && !(was && was.progress >= 1)) announce(title)
+  }
+
+  // ---- settings ----
+  function openSettings(then) {
+    if (!api || st.state === 'recording') return
+    afterLoad = then || null
+    if (setOpen) { if (!$('settings').hasAttribute('aria-busy') && then) then(); return }
+    opener = document.activeElement
+    setOpen = true
+    save()
+    $('gear').setAttribute('aria-pressed', 'true')
+    for (const e of document.querySelectorAll('#cards .err')) { e.textContent = ''; e.hidden = true }
+    $('up-status').textContent = ''
+    $('settings').setAttribute('aria-busy', 'true')
+    $('cards').inert = true
+    $('cards').hidden = false
+    $('s-error').hidden = true
+    showView()
+    $('settings').scrollTop = 0
+    $('s-back').focus()
+    const req = ++setsReq
+    api.get_settings().then((s) => {
+      if (req !== setsReq) return
+      fillSettings(s)
+      $('settings').removeAttribute('aria-busy')
+      $('cards').inert = false
+      if (afterLoad) afterLoad()
+    }, () => {
+      if (req !== setsReq) return
+      $('settings').removeAttribute('aria-busy')
+      $('cards').hidden = true
+      $('s-error').hidden = false
+    })
+  }
+
+  function closeSettings(restore) {
+    if (!setOpen) return
+    endCapture()
+    setOpen = false
+    setsReq++
+    $('gear').setAttribute('aria-pressed', 'false')
+    showView()
+    if (!restore) return
+    const o = opener && opener !== document.body && opener.isConnected && !opener.closest('[hidden], [inert]') && !opener.disabled ? opener : null
+    ;(o || $('list').querySelector('.item[tabindex="0"]') || $('rec')).focus()
+  }
+
+  const langName = new Intl.DisplayNames(['en'], { type: 'language' })
+  function fillSettings(s) {
+    if (!s) return
+    sets = s
+    $('s-popup').checked = !!s.popup
+    $('s-autostart').checked = !!s.autostart
+    const mic = $('s-mic'), mics = s.mics || []
+    mic.replaceChildren(new Option('Windows default', ''), ...mics.map((m) => new Option(m.name, m.id)))
+    if (s.mic && !mics.some((m) => m.id === s.mic)) mic.append(new Option(`${s.mic} (not connected)`, s.mic))
+    mic.value = s.mic || ''
+    const lang = $('s-lang')
+    if (!lang.options.length) {
+      const name = (c) => { try { return langName.of(c) } catch (e) { return c } }  // it hands the code back when it has no name
+      const rest = (s.languages || []).filter((c) => c !== 'en' && c !== 'auto').map((c) => [c, name(c)])
+        .filter(([c, n]) => n && n !== c).sort((a, b) => a[1].localeCompare(b[1], 'en'))
+      lang.replaceChildren(new Option('English', 'en'), new Option('Detect automatically', 'auto'), el('hr'), ...rest.map(([c, n]) => new Option(n, c)))
+    }
+    if (s.language && ![...lang.options].some((o) => o.value === s.language)) lang.append(new Option(s.language, s.language))
+    lang.value = s.language || 'en'
+    $('s-ver').textContent = s.version ? 'SayNote ' + s.version : ''
+    if (s.hotkey && s.hotkey !== hotkey && !capturing) { hotkey = s.hotkey; fillKeys() }
+  }
+
+  // The language can't change while a speech model loads; the sidebar's "Getting ready" line shows that progress
+  let langWasOff = false
+  function syncLang() {
+    const sel = $('s-lang'), why = $('w-lang'), off = st.state === 'loading', had = document.activeElement
+    why.hidden = !off
+    if (off && had === sel) why.focus()  // a control that turns disabled drops focus to <body>
+    sel.disabled = off
+    if (!off && had === why) sel.focus()  // and the reason is about to hide
+    if (langWasOff && !off && setOpen && api) api.get_settings().then(fillSettings, () => {})  // a failed download put the old language back
+    langWasOff = off
+  }
+  // A closed list changes on every arrow key, and one step off English starts a 480 MB download that locks it.
+  // So a pick from the keyboard applies on Enter or when focus leaves; one from the open list or the mouse applies at once.
+  let langKeys = false
+  function pickLang() {
+    langKeys = false
+    if (sets && $('s-lang').value !== sets.language) setSetting('language', $('s-lang').value)
+  }
+
+  function showErr(key, text) {
+    const e = $('e-' + key)
+    e.textContent = text
+    e.hidden = !text
+    if (text) announce(text)
+  }
+
+  // Each change applies at once. On failure the control goes back to what Python says is true.
+  async function setSetting(key, value) {
+    showErr(key, '')
+    let r = null
+    try { r = await api.set_setting(key, value) } catch (e) { r = null }
+    fillSettings((r && r.settings) || sets)
+    if (r && r.ok) return true
+    showErr(key, (r && r.error) || "Couldn't change this setting. Try again.")
+    return false
+  }
+
+  // ---- shortcut picker ----
+  // While it listens, Python keeps the current hotkey from starting a recording. Every way out goes through endCapture.
+  function startCapture() {
+    if (capturing || !api) return
+    capturing = true
+    showErr('hotkey', '')
+    quiet(api.pick_hotkey(true))
+    $('hk-change').innerHTML = 'Cancel<span class="sr"> new shortcut</span>'
+    held([])
+    announce('Press the new shortcut. Esc cancels.')
+  }
+  function endCapture() {
+    if (!capturing) return
+    capturing = false
+    quiet(api.pick_hotkey(false))
+    $('hk-change').innerHTML = 'Change<span class="sr"> shortcut</span>'
+    $('hk-prompt').hidden = true
+    $('hk-keys').hidden = false
+    fillKeys()
+    showErr('hotkey', '')  // a "that key can't be used" from this round is stale now
+  }
+  // Modifiers held so far show as keycaps, the way Windows' own shortcut pickers do
+  function held(mods) {
+    $('hk-prompt').hidden = mods.length > 0
+    $('hk-keys').hidden = !mods.length
+    if (mods.length) renderKeys($('hk-keys'), mods)
+  }
+  const modsOf = (e) => [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Win'].filter(Boolean)
+  addEventListener('keydown', (e) => {
+    if (!capturing) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    if (e.repeat) return
+    if (e.key === 'Escape') return endCapture()
+    const mods = modsOf(e)
+    if (/^(Control|Alt|Shift|Meta|OS)/.test(e.code) || /^(Control|Alt|AltGraph|Shift|Meta|OS)$/.test(e.key)) return held(mods)
+    const c = e.code, key = /^(Key[A-Z]|Digit\d)$/.test(c) ? c.slice(-1) : /^(F([1-9]|1\d|2[0-4])|Space)$/.test(c) ? c : null
+    if (!key) return showErr('hotkey', "That key can't be used. Pick a letter, a number, F1 to F24 or Space.")
+    const name = [...mods, key].join('+')
+    if (!/^F\d/.test(key) && !(e.ctrlKey || e.altKey || e.metaKey)) {
+      return showErr('hotkey', `${name} alone would go off while you type. Add Ctrl, Alt or Win. F1 to F24 work on their own.`)
+    }
+    endCapture()
+    // !hotkeyOk: the same one again is a retry, once whoever held it let go
+    if (name !== hotkey || !hotkeyOk) setSetting('hotkey', name).then((ok) => ok && announce(`The shortcut is now ${name}.`))
+  }, true)
+  addEventListener('keyup', (e) => { if (capturing) { e.preventDefault(); held(modsOf(e)) } }, true)
+
+  // ---- discard ----
+  async function discard() {
+    if (!api || discarding) return
+    discarding = true
+    try { await api.discard() } catch (e) { toast("Couldn't discard the recording.", 'error') }
+    discarding = false
+  }
+  async function undoDiscard() {
+    if (!toastUndo || !api) return
+    hideToast()
+    let ok = false
+    try { ok = await api.undo_discard() } catch (e) { ok = false }
+    if (!ok) toast("That recording can't be brought back anymore.", 'info')
+  }
+
+  async function copyText(text) {
+    // writeText can stay pending forever without permission, so give it a second, then fall back
+    const late = new Promise((resolve, reject) => setTimeout(reject, 1000))
+    try { await Promise.race([navigator.clipboard.writeText(text), late]); return true } catch (e) { /* fall back */ }
+    const prev = document.activeElement, t = el('textarea')
+    t.value = text
+    t.setAttribute('readonly', '')
+    t.style.cssText = 'position:fixed;top:0;left:0;opacity:0'
+    document.body.append(t)
+    t.select()
+    let ok = false
+    try { ok = document.execCommand('copy') } catch (e) { ok = false }
+    t.remove()
+    if (prev) prev.focus()
+    return ok
+  }
+
+  // ---- events ----
+  $('rec').addEventListener('click', () => api && api.toggle())
+  $('folder').addEventListener('click', () => api && Promise.resolve(api.open_folder()).catch(() => toast("Couldn't open the notes folder.", 'error')))
+  $('copy').addEventListener('click', async () => {
+    const n = current()
+    if (n) toast(...((await copyText(textOf(n))) ? ['Copied'] : ["Couldn't copy.", 'error']))
+  })
+  $('delete').addEventListener('click', () => del(selId, false))
+  $('list').addEventListener('click', (e) => {
+    const b = e.target.closest('.item')
+    if (b) select(b.dataset.id)
+  })
+  $('list').addEventListener('keydown', (e) => {
+    const vis = shown()  // arrows walk the search results only
+    if (!vis.length) return
+    if (e.key === 'Delete') { e.preventDefault(); if (!e.repeat) del(selId, true); return }  // holding Delete removes one note, not four
+    const i = vis.findIndex((n) => n.id === selId)  // -1: the open note doesn't match, so Down goes to the first match
+    const j = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: vis.length - 1 }[e.key]
+    if (j != null) { e.preventDefault(); select(vis[Math.max(0, Math.min(vis.length - 1, j))].id, true) }
+  })
+
+  const body = $('r-body')
+  body.addEventListener('input', () => {
+    if (!shownId) return
+    drafts.set(shownId, body.textContent.replace(/\s+$/, ''))  // the editor keeps a trailing line break to show the caret on it
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(save, 800)
+    if (!failed.has(shownId)) saveStatus('')
+    mark()
+  })
+  body.addEventListener('blur', () => save())
+  body.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.isComposing) return
+    e.preventDefault()
+    e.stopPropagation()
+    home()
+  })
+
+  $('q').addEventListener('input', onSearch)
+  $('q').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('q').value) { e.preventDefault(); $('q').value = ''; onSearch(); return }
+    const b = $('list').querySelector('.item[tabindex="0"]')
+    if ((e.key === 'Escape' || e.key === 'ArrowDown' || e.key === 'Enter') && b) { e.preventDefault(); b.focus() }
+  })
+
+  $('gear').addEventListener('click', () => setOpen ? closeSettings(true) : openSettings())
+  $('s-back').addEventListener('click', () => closeSettings(true))
+  $('up-go').addEventListener('click', () => api && Promise.resolve(api.install_update()).catch(() => toast("Couldn't start the update.", 'error')))
+  $('up-check').addEventListener('click', () => {
+    if (!api || checking) return
+    checking = true
+    $('up-status').textContent = 'Checking…'
+    Promise.resolve(api.check_update()).then((r) => {
+      if (r && r.update) showUpdate(r.update)
+      $('up-status').textContent = r && r.error ? r.error : r && r.update ? `SayNote ${r.update.version} is available: Update is at the bottom left.` : "You're up to date."
+    }, () => { $('up-status').textContent = "Couldn't check for updates." }).finally(() => { checking = false })
+  })
+  $('fix-hotkey').addEventListener('click', () => openSettings(() => {
+    $('hk-change').scrollIntoView({ block: 'nearest' })
+    $('hk-change').focus()
+    startCapture()
+  }))
+  $('s-popup').addEventListener('change', (e) => setSetting('popup', e.target.checked))
+  $('s-autostart').addEventListener('change', (e) => setSetting('autostart', e.target.checked))
+  $('s-mic').addEventListener('change', (e) => setSetting('mic', e.target.value || null))
+  $('s-lang').addEventListener('change', () => { if (!langKeys) pickLang() })
+  $('s-lang').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') pickLang()
+    else if (e.key === 'Escape') { langKeys = false; if (sets) e.target.value = sets.language }
+    else langKeys = !e.altKey && e.key !== 'F4' && e.key !== ' '  // those open the list, which picks on its own
+  })
+  $('s-lang').addEventListener('blur', () => { if (langKeys) pickLang() })
+  $('s-lang').addEventListener('pointerdown', () => { langKeys = false })
+  $('hk-change').addEventListener('click', () => capturing ? endCapture() : startCapture())
+  $('hk-change').addEventListener('blur', endCapture)  // a click elsewhere or the window losing focus ends it too
+
+  $('discard').addEventListener('click', discard)
+  $('undo').addEventListener('click', undoDiscard)
+  $('toast').addEventListener('pointerenter', () => clearTimeout(toastTimer))
+  $('toast').addEventListener('pointerleave', armToast)
+  $('toast').addEventListener('focusin', () => clearTimeout(toastTimer))
+  $('toast').addEventListener('focusout', () => setTimeout(armToast))
+
+  addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.isComposing) return
+    const ctrl = e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey
+    if (ctrl && e.code === 'KeyF') {
+      e.preventDefault()
+      if (!$('search').inert && !$('search').hidden) { $('q').focus(); $('q').select() }
+    } else if (ctrl && e.code === 'Comma') {
+      e.preventDefault()
+      if (setOpen) closeSettings(true); else openSettings()
+    } else if (ctrl && e.code === 'KeyZ' && toastUndo && !editable(e.target)) {
+      e.preventDefault()
+      undoDiscard()
+    } else if (e.key === 'Escape' && !e.repeat) {
+      if (st.state === 'recording') { e.preventDefault(); discard() } else if (setOpen && !editable(e.target)) { e.preventDefault(); closeSettings(true) }
+    }
+  })
+  document.addEventListener('animationend', (e) => e.target.classList.remove('fresh'))
+  // Moving focus after a hotkey save stays quiet until the user navigates here. Ctrl and Alt of Ctrl+Alt+N do reach the
+  // page (Windows swallows only the N), so chords don't count; Tab, arrows and Shift+Tab do.
+  addEventListener('keydown', (e) => { if (!e.ctrlKey && !e.altKey && !e.metaKey) document.documentElement.classList.add('kb') }, true)
+  addEventListener('pointerdown', () => document.documentElement.classList.remove('kb'), true)
+  window.addEventListener('focus', reload)
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); endCapture() } })
+  addEventListener('pagehide', () => { save(); endCapture() })
+  // "Today" must become "Yesterday" after midnight; the app lives in the tray for days.
+  setInterval(() => {
+    if (new Date().toDateString() === today) return
+    today = new Date().toDateString()
+    renderList()
+    renderReader()
+  }, 60000)
+
+  // ---- Python bridge ----
+  window.SayNote = {
+    update(msg) {
+      if (!msg) return
+      if (msg.type === 'state') { statePushed = true; applyState(msg) }
+      else if (msg.type === 'level') onLevel(msg.level)
+      else if (msg.type === 'note') addNote(msg.note)
+      else if (msg.type === 'message') toast(String(msg.text || ''), msg.kind === 'error' ? 'error' : 'info', !!msg.undo)
+    },
+  }
+
+  function start() {
+    if (api || !(window.pywebview && window.pywebview.api && window.pywebview.api.get_state)) return
+    api = window.pywebview.api
+    api.get_state().then((s) => { if (!statePushed) applyState(s) }, () => {  // a push that arrived first is newer: keep it
+      if (!statePushed) applyState({ state: 'idle' })
+      toast("SayNote didn't start properly. Quit it from the tray icon and open it again.", 'error')
+    })
+    api.list_notes().then((list) => {
+      const have = new Set(notes.map((n) => n.id))
+      for (const n of list || []) if (!have.has(n.id)) notes.push(n)
+      sortNotes()
+    }, () => toast("Couldn't load your notes.", 'error')).then(() => {
+      loaded = true
+      if (!current() && notes.length) selId = notes[0].id
+      renderList()
+      renderReader()
+      showView()
+    })
+  }
+
+  for (let i = 0; i < BARS; i++) $('bars').append(el('i'))
+  fillKeys()
+  applyState(st)
+  start()
+  window.addEventListener('pywebviewready', start)
+})()
+</script>
+</body>
+</html>

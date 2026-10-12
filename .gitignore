@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# PyInstaller output from build.ps1
+build/
+dist/
+
+# Release zips, uploaded to GitHub Releases rather than committed
+*.zip
+
+# Kept on this PC only: the older VoicePrj tool and its notes (they describe this PC)
+NOTES.md
+voice.py
+tests/test_voice.py
+tests/testapp.ps1
