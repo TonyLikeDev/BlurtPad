@@ -1,6 +1,6 @@
-"""SayNote: press Ctrl+Alt+N anywhere, talk, press it again. What you said is saved as a note.
-The window (ui/index.html in WebView2) shows your notes; closing it keeps SayNote running in the tray.
-Notes are plain .txt files in Documents\\SayNote, one per note, named by date and time. Windows only, CPU only.
+"""Blurt: press Ctrl+Alt+N anywhere, talk, press it again. What you said is saved as a note.
+The window (ui/index.html in WebView2) shows your notes; closing it keeps Blurt running in the tray.
+Notes are plain .txt files in Documents\\Blurt, one per note, named by date and time. Windows only, CPU only.
 Run from source: .venv\\Scripts\\pythonw.exe saynote.py"""
 import base64, ctypes, hashlib, io, json, logging, os, queue, re, shutil, string, subprocess, sys, tempfile, threading, time, urllib.request, wave, winreg
 from contextlib import suppress
@@ -14,14 +14,14 @@ import sounddevice as sd
 import webview
 from PIL import Image, ImageDraw
 
-VERSION = "1.3"
-REPO = "TonyLikeDev/SayNote"  # owner/name of the GitHub repo whose releases are SayNote's updates (their SayNote-Setup-<version>.exe). Empty: no updates
+VERSION = "1.4"
+REPO = "TonyLikeDev/SayNote"  # owner/name of the GitHub repo whose releases are Blurt's updates (their Blurt-Setup-<version>.exe). Empty: no updates
 THREADS, RATE = 4, 16000
 MIN_SECS, MAX_SECS = 0.4, 30 * 60  # shorter is a key bump; longer is a forgotten recording, stopped and saved
 # ponytail: a meeting's audio stays in memory (16-bit, about 115 MB an hour); stream it to a file if 3 hours isn't enough
 MAX_TEAM_SECS, TEAM_MAX, VOICE_SECS = 3 * 3600, 10, 8  # longest meeting, most people, length of a voice check
 SPEAKER_MIN = 0.4  # how alike a line and a saved voice must sound (0..1) to name it; below: "Unknown". Calibration knob
-SENTENCE = "The quick brown fox jumps over the lazy dog. I'm reading this so SayNote can learn how my voice sounds."
+SENTENCE = "The quick brown fox jumps over the lazy dog. I'm reading this so Blurt can learn how my voice sounds."
 # Turns a voice into a fingerprint (sherpa-onnx, 3D-Speaker CAM++). Trained on Chinese and English speech, it also told apart
 # the voices it was tested on best. Downloaded once, checked against this hash
 VOICE_MODEL = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
@@ -57,11 +57,24 @@ def _documents():
 
 
 HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))  # bundled files live in _MEIPASS in the built app
-NOTES = Path(os.environ.get("SAYNOTE_DIR") or _documents() / "SayNote").absolute()  # the Recycle Bin call needs a full path
-LOG = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SayNote" / "saynote.log"
+NOTES = Path(os.environ.get("SAYNOTE_DIR") or _documents() / "Blurt").absolute()  # the Recycle Bin call needs a full path
+LOG = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SayNote" / "saynote.log"  # SayNote: Blurt's name before 1.4
 SETTINGS = Path(os.environ.get("SAYNOTE_SETTINGS") or LOG.parent / "settings.json")
 VOICES = Path(os.environ.get("SAYNOTE_VOICES") or LOG.parent / "voices.json")  # voice fingerprints by name, on this PC only
 DEFAULTS = {"popup": True, "hotkey": "Ctrl+Alt+N", "mic": None, "language": "en"}
+
+
+def move_old_notes():
+    """Blurt was SayNote before 1.4, with notes in Documents\\SayNote: that folder becomes Documents\\Blurt, once. If something
+    holds it open, the notes stay there for now and the move is tried again next start."""
+    global NOTES
+    old = _documents() / "SayNote"
+    if NOTES != old.with_name("Blurt") or NOTES.exists() or not old.is_dir():
+        return
+    try:
+        old.rename(NOTES)
+    except OSError:
+        NOTES = old
 
 
 def save_note(text, when):
@@ -179,7 +192,7 @@ def transcribe(model, audio, lang):
 
 
 def parse_hotkey(name):
-    """'ctrl+alt+n' -> ('Ctrl+Alt+N', RegisterHotKey modifiers, virtual key), or None if SayNote can't use it: Ctrl, Alt, Shift and
+    """'ctrl+alt+n' -> ('Ctrl+Alt+N', RegisterHotKey modifiers, virtual key), or None if Blurt can't use it: Ctrl, Alt, Shift and
     Win at most once each, then A-Z, 0-9, F1-F24 or Space. Needs Ctrl, Alt or Win unless it's an F key, so typing never sets it off."""
     if not isinstance(name, str):
         return None
@@ -225,7 +238,7 @@ def save_settings(s):
         SETTINGS.parent.mkdir(parents=True, exist_ok=True)
         write_file(SETTINGS, json.dumps(s, indent=2))
     except OSError:
-        logging.exception("save settings")  # still in effect until SayNote restarts
+        logging.exception("save settings")  # still in effect until Blurt restarts
 
 
 def refresh_audio():
@@ -267,7 +280,7 @@ def _tone(*hz, secs=0.07, rate=48000):
     return (np.concatenate([np.sin(2 * np.pi * f * t) * np.hanning(t.size) for f in hz]) * 0.2).astype("float32")
 
 
-# Played when SayNote starts and stops listening while its window stays in the background: up, then down.
+# Played when Blurt starts and stops listening while its window stays in the background: up, then down.
 # ponytail: the start sound also reaches the mic as the recording begins; Whisper's speech filter drops it. Delay the stream if not
 START_CUE, STOP_CUE = _tone(660, 880), _tone(880, 660)
 
@@ -376,7 +389,7 @@ def heard_speech(audio):
 
 
 def recording_icon(size):
-    """The tray icon at the tray's own size with a red dot: SayNote is listening. -> icon handle"""
+    """The tray icon at the tray's own size with a red dot: Blurt is listening. -> icon handle"""
     ico = Image.open(HERE / "saynote.ico")
     img = (ico.ico.getimage((size, size)) if (size, size) in ico.info["sizes"]
            else ico.ico.getimage((256, 256)).resize((size, size), Image.LANCZOS)).convert("RGBA")
@@ -398,13 +411,13 @@ def version_tuple(v):
 
 
 def newer_release(release):
-    """GitHub's 'latest release' JSON -> {version, notes, url, sha256} when it is newer than this SayNote and has its
-    installer, SayNote-Setup-<version>.exe, from this repo. Else None."""
+    """GitHub's 'latest release' JSON -> {version, notes, url, sha256} when it is newer than this Blurt and has its
+    installer, Blurt-Setup-<version>.exe, from this repo. Else None."""
     v = version_tuple(release.get("tag_name"))
     if not v or v <= version_tuple(VERSION):
         return None
     version = ".".join(map(str, v))
-    asset = next((a for a in release.get("assets") or [] if a.get("name") == f"SayNote-Setup-{version}.exe"), None)
+    asset = next((a for a in release.get("assets") or [] if a.get("name") == f"Blurt-Setup-{version}.exe"), None)
     url = str((asset or {}).get("browser_download_url", ""))
     if not url.startswith(f"https://github.com/{REPO}/releases/download/"):
         return None
@@ -414,7 +427,7 @@ def newer_release(release):
 
 
 def _get(url, timeout):
-    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": f"SayNote/{VERSION}",
+    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": f"Blurt/{VERSION}",
                                                                         "Accept": "application/vnd.github+json"}), timeout=timeout)
 
 
@@ -425,7 +438,7 @@ def latest_release():
 
 def download_update(release, progress=lambda done: None):
     """Download a release's installer into a fresh folder in %TEMP% and check it against GitHub's checksum. -> its path"""
-    folder = Path(tempfile.gettempdir()) / "SayNote-update"
+    folder = Path(tempfile.gettempdir()) / "Blurt-update"
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir()
     setup, sha = folder / release["url"].rsplit("/", 1)[1], hashlib.sha256()
@@ -442,12 +455,14 @@ def download_update(release, progress=lambda done: None):
 
 
 def install_after(pid, setup, exe):
-    """Hidden, in the background: once process pid has quit, run the installer without asking (it keeps the old version if it
-    fails), then start exe. -> the PowerShell process"""
+    """Hidden, in the background: once process pid has quit, run the installer without asking. It starts the new version
+    itself; if it fails, it keeps the old version, and exe (the old one) starts again. -> the PowerShell process"""
     text = lambda v: "'" + str(v).replace("'", "''") + "'"  # a PowerShell string
     script = (f"Wait-Process -Id {pid} -Timeout 600 -ErrorAction SilentlyContinue; "
-              f"Start-Process -FilePath {text(setup)} -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait; "
-              f"Start-Process -FilePath {text(exe)}")
+              f"$p = Start-Process -FilePath {text(setup)} -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru; "
+              # not -Wait, which would also wait for the Blurt the installer starts; .Handle keeps the exit code readable
+              f"if ($p) {{ $null = $p.Handle; $p.WaitForExit() }}; "
+              f"if (-not $p -or $p.ExitCode) {{ Start-Process -FilePath {text(exe)} }}")
     powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     return subprocess.Popen([str(powershell), "-NoProfile", "-NonInteractive", "-EncodedCommand", base64.b64encode(script.encode("utf-16-le")).decode()],
                             creationflags=subprocess.CREATE_NO_WINDOW)
@@ -462,7 +477,7 @@ def autostart_command():
 def autostart():
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
-            return winreg.QueryValueEx(k, "SayNote")[0] == autostart_command()
+            return winreg.QueryValueEx(k, "Blurt")[0] == autostart_command()
     except OSError:
         return False
 
@@ -470,10 +485,10 @@ def autostart():
 def set_autostart(on):
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
         if on:
-            winreg.SetValueEx(k, "SayNote", 0, winreg.REG_SZ, autostart_command())
+            winreg.SetValueEx(k, "Blurt", 0, winreg.REG_SZ, autostart_command())
         else:
             try:
-                winreg.DeleteValue(k, "SayNote")
+                winreg.DeleteValue(k, "Blurt")
             except FileNotFoundError:
                 pass
 
@@ -510,7 +525,7 @@ class App:
         self.update, self.update_progress, self.told_update = None, None, None  # a newer release on GitHub; download progress
         dark = dark_mode()
         self.window = webview.create_window(
-            "SayNote", str(HERE / "ui" / "index.html"), width=1000, height=660, min_size=(720, 480),
+            "Blurt", str(HERE / "ui" / "index.html"), width=1000, height=660, min_size=(720, 480),
             hidden=hidden, background_color="#202020" if dark else "#F3F3F3")
         # What the page can call, as plain functions named as in ui/preview.js. Not a js_api object: pywebview lets the page
         # call any dotted path under that, underscores included, so everything the object led to would be reachable
@@ -541,10 +556,10 @@ class App:
         threading.Thread(target=self.load_model, daemon=True).start()
         threading.Thread(target=self.watch_updates, daemon=True).start()
         menu = pystray.Menu(
-            pystray.MenuItem("Open SayNote", lambda: self.show(), default=True),
+            pystray.MenuItem("Open Blurt", lambda: self.show(), default=True),
             pystray.MenuItem("Start with Windows", lambda: set_autostart(not autostart()), checked=lambda _: autostart()),
             pystray.MenuItem("Quit", lambda: self.quit()))
-        self.icon = pystray.Icon("SayNote", Image.open(HERE / "saynote.ico"), f"SayNote ({self.settings['hotkey']})", menu)
+        self.icon = pystray.Icon("Blurt", Image.open(HERE / "saynote.ico"), f"Blurt ({self.settings['hotkey']})", menu)
         # ponytail: pystray loads its icon at 32 px and lets Windows shrink it, blurring the hand-tuned small frames. Give it the
         # .ico's own tray-sized frame through a private attribute (pystray 0.19.5); drop this if pystray grows a sharper path
         size = user32.GetSystemMetrics(49)  # SM_CXSMICON
@@ -693,7 +708,7 @@ class App:
                 return f"{parsed[0]} is taken by another program. Pick another one."
         elif key == "language":
             if value != "auto" and value not in LANGUAGES:
-                return "SayNote doesn't know that language."
+                return "Blurt doesn't know that language."
             if not self.model_ready.is_set():
                 return "Still getting ready. Try again in a moment."
             model, old = self.loaded
@@ -717,27 +732,27 @@ class App:
     def _pump(self):
         """Sends the queued updates to the page, the title bar and the tray, one at a time, in order.
         ponytail: if the page's renderer process dies, evaluate_js never returns and this thread stays stuck: the window stops
-        updating until SayNote restarts, while recording, saving and Quit keep working. Reload on CoreWebView2.ProcessFailed if it matters"""
-        titles = {"recording": "SayNote - Listening", "transcribing": "SayNote - Writing it down"}
+        updating until Blurt restarts, while recording, saving and Quit keep working. Reload on CoreWebView2.ProcessFailed if it matters"""
+        titles = {"recording": "Blurt - Listening", "transcribing": "Blurt - Writing it down"}
         while True:
             msg = self.outbox.get()
             try:
                 if msg["type"] == "state":
-                    self.window.title = titles.get(msg["state"], "SayNote")
+                    self.window.title = titles.get(msg["state"], "Blurt")
                     self.tray(msg["state"] == "recording", msg["hotkey"])
                 self.window.evaluate_js(f"window.SayNote && window.SayNote.update({json.dumps(msg)})")
             except Exception:  # page not loaded yet, or closing: it asks for the state itself when it loads
                 pass
 
     def tray(self, recording, hotkey):
-        """The red dot and tooltip in the tray: how you can tell SayNote is listening while its window stays in the background.
+        """The red dot and tooltip in the tray: how you can tell Blurt is listening while its window stays in the background.
         ponytail: swaps the icon under pystray (private _icon_handle and _message, pystray 0.19.5), like start() does"""
         try:
             h = self.tray_icons[recording]
             if self.icon and h and self.icon._icon_handle != h:
                 self.icon._icon_handle = h
                 self.icon._message(1, 2, hIcon=h)  # NIM_MODIFY, NIF_ICON
-            title = "SayNote - Listening" if recording else f"SayNote ({hotkey})"
+            title = "Blurt - Listening" if recording else f"Blurt ({hotkey})"
             if self.icon and self.icon.title != title:
                 self.icon.title = title
         except Exception:
@@ -749,7 +764,7 @@ class App:
 
     # ---- updates
     def watch_updates(self):
-        """Look for a newer version soon after starting, then once a day: SayNote can sit in the tray for weeks."""
+        """Look for a newer version soon after starting, then once a day: Blurt can sit in the tray for weeks."""
         if not REPO:
             return
         time.sleep(60)
@@ -760,7 +775,7 @@ class App:
     def check_update(self):
         """-> {update, error}: update as in get_state, or None when this is the newest; error: why it couldn't look"""
         if not REPO:
-            return {"update": None, "error": "This copy of SayNote has no place to get updates from."}
+            return {"update": None, "error": "This copy of Blurt has no place to get updates from."}
         try:
             release = latest_release()
         except Exception as e:
@@ -770,12 +785,12 @@ class App:
             self.update = release
         if release and self.told_update != release["version"] and self.icon and user32.GetForegroundWindow() != self.hwnd:
             self.told_update = release["version"]
-            self.icon.notify(f"SayNote {release['version']} is available. Open SayNote to update.", "SayNote")
+            self.icon.notify(f"Blurt {release['version']} is available. Open Blurt to update.", "Blurt")
         self.push_state()
         return {"update": self.get_state()["update"], "error": None}
 
     def install_update(self):
-        """Download the newer version's installer, then quit: it installs and SayNote starts again. -> whether it started"""
+        """Download the newer version's installer, then quit: it installs and Blurt starts again. -> whether it started"""
         with self.lock:
             if not self.update or self.update_progress is not None:
                 return False
@@ -783,7 +798,7 @@ class App:
                 self.say("Finish your recording first, then update.", "error")
                 return False
             if not getattr(sys, "frozen", False):
-                self.say("Updates install into the installed SayNote, not one run from source.", "error")
+                self.say("Updates install into the installed Blurt, not one run from source.", "error")
                 return False
             self.update_progress = 0
         self.push_state()
@@ -805,7 +820,7 @@ class App:
             self.update_progress = None
             self.say(f"Couldn't update: {e}", "error")
             return self.push_state()
-        self.update_progress = 1  # the page says SayNote is restarting
+        self.update_progress = 1  # the page says Blurt is restarting
         self.push_state()
         time.sleep(1)  # let the page show it
         self.quit()
@@ -813,7 +828,7 @@ class App:
     def say(self, text, kind="info", undo=False):
         self.push({"type": "message", "text": text, "kind": kind, "undo": undo})
         if self.icon and not self.settings["popup"] and user32.GetForegroundWindow() != self.hwnd:
-            self.icon.notify(text, "SayNote")  # the window stays in the background, so the page's own message would go unseen
+            self.icon.notify(text, "Blurt")  # the window stays in the background, so the page's own message would go unseen
 
     # ---- recording
     def toggle(self):
@@ -993,7 +1008,7 @@ class App:
             stream.close()
             audio = np.concatenate(chunks) if chunks else np.zeros(0, "float32")
             if not heard_speech(audio):
-                return {"ok": False, "error": "SayNote couldn't hear you. Check the microphone, then try again."}
+                return {"ok": False, "error": "Blurt couldn't hear you. Check the microphone, then try again."}
             voices = load_voices()
             voices[name] = fingerprint(audio)
             save_voices(voices)
@@ -1051,7 +1066,7 @@ class App:
         threading.Thread(target=self.window.hide, daemon=True).start()
         if self.icon and not self.told_tray:
             self.told_tray = True
-            self.icon.notify(f"SayNote is still running. Press {self.settings['hotkey']} any time, or use the tray icon.", "SayNote")
+            self.icon.notify(f"Blurt is still running. Press {self.settings['hotkey']} any time, or use the tray icon.", "Blurt")
 
     def on_closed(self, *_):
         """WinForms FormClosed, on the window's thread. Without quit() this is Windows ending the session, which leaves no time
@@ -1077,7 +1092,7 @@ class App:
             busy = self.busy
         if busy:
             self.show()
-            self.say("Saving your note, then SayNote will close.")
+            self.say("Saving your note, then Blurt will close.")
         else:
             self.exit()
 
@@ -1088,8 +1103,8 @@ class App:
 
 
 def single_instance():
-    """The 'show' event handle for the first SayNote. A second launch signals it (the first shows its window) and gets None."""
-    h = kernel32.CreateEventW(None, False, False, "Local\\SayNote.show")
+    """The 'show' event handle for the first Blurt. A second launch signals it (the first shows its window) and gets None."""
+    h = kernel32.CreateEventW(None, False, False, "Local\\SayNote.show")  # the old name: SayNote 1.3 and Blurt never run at once
     if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
         kernel32.SetEvent(h)
         return None
@@ -1097,12 +1112,13 @@ def single_instance():
 
 
 def run(hidden=False, then=None):
-    """Start SayNote and block until it quits. then(app) runs on its own thread once the window exists (tests drive the app with it)."""
+    """Start Blurt and block until it quits. then(app) runs on its own thread once the window exists (tests drive the app with it)."""
     event = single_instance()
     if not event:
         return None
+    move_old_notes()
     app = App(hidden)
-    # 'SayNote.exe --quit' (the uninstaller) sets this one: quit the way the tray's Quit does, saving a recording first
+    # 'Blurt.exe --quit' (the uninstaller) sets this one: quit the way the tray's Quit does, saving a recording first
     events = (wintypes.HANDLE * 2)(event, kernel32.CreateEventW(None, True, False, "Local\\SayNote.quit"))
 
     def wake():
@@ -1122,7 +1138,7 @@ def run(hidden=False, then=None):
 
 
 def main():
-    if "--quit" in sys.argv:  # ask a running SayNote to quit; nothing to do if none is running
+    if "--quit" in sys.argv:  # ask a running Blurt to quit; nothing to do if none is running
         h = kernel32.OpenEventW(0x2, False, "Local\\SayNote.quit")  # EVENT_MODIFY_STATE
         if h:
             kernel32.SetEvent(h)

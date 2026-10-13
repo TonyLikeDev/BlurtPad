@@ -2,12 +2,12 @@
 pure: note files, the delete guard, the Recycle Bin.
 update: offering a new version and downloading its installer (from a local server), in temp folders.
 team: a meeting of four synthetic voices, transcribed with who said what (Whisper and the voice model; no microphone).
-exe:  the built dist\\SayNote\\SayNote.exe: it starts, the hotkey flips the title, a second launch exits. Build it first.
-      Presses Ctrl+Alt+N for real, but only while SayNote's own window is in front; otherwise those checks are skipped.
+exe:  the built dist\\Blurt\\Blurt.exe: it starts, the hotkey flips the title, a second launch exits. Build it first.
+      Presses Ctrl+Alt+N for real, but only while Blurt's own window is in front; otherwise those checks are skipped.
 app:  the real window, hotkey thread and Whisper in this process. Fires the hotkey by posting WM_HOTKEY to the hotkey thread
       (no key presses) and swaps what the mic heard for a sentence from Windows' built-in TTS; nothing is played.
-Screenshots use PrintWindow (SayNote's own pixels, never other apps) and go to %TEMP%\\saynote-shots.
-Everything uses a temp notes folder. Quit a running SayNote first: they share the hotkey. 'exe' must run before 'app'."""
+Screenshots use PrintWindow (Blurt's own pixels, never other apps) and go to %TEMP%\\saynote-shots.
+Everything uses a temp notes folder. Quit a running Blurt first: they share the hotkey. 'exe' must run before 'app'."""
 import ctypes, json, os, shutil, subprocess, sys, tempfile, threading, time
 from datetime import datetime
 from pathlib import Path
@@ -48,7 +48,7 @@ def tap_hotkey():
 def windows_of(pid):
     found = []
     win32gui.EnumWindows(lambda h, _: found.append(h) if win32gui.IsWindowVisible(h) and win32process.GetWindowThreadProcessId(h)[1] == pid
-                         and win32gui.GetWindowText(h).startswith("SayNote") else None, None)
+                         and win32gui.GetWindowText(h).startswith("Blurt") else None, None)
     return found
 
 
@@ -74,6 +74,14 @@ def shot(hwnd, name):
 
 
 def test_pure(tmp):
+    docs = Path(tmp) / "docs"  # Documents, with notes from when Blurt was SayNote
+    (docs / "SayNote").mkdir(parents=True)
+    (docs / "SayNote" / "old.txt").write_text("kept")
+    real, saynote._documents, saynote.NOTES = saynote._documents, lambda: docs, docs / "Blurt"
+    saynote.move_old_notes()
+    saynote._documents = real
+    check("Documents\\SayNote becomes Documents\\Blurt", ((docs / "Blurt" / "old.txt").read_text(), (docs / "SayNote").exists()), ("kept", False))
+
     saynote.NOTES = Path(tmp) / "pure"
     t = datetime(2026, 10, 11, 9, 0, 0)
     a, b = saynote.save_note("first", t), saynote.save_note("second", t)
@@ -116,7 +124,7 @@ def test_pure(tmp):
     check("shortcuts that typing would set off, or that aren't keys, are refused",
           [saynote.parse_hotkey(k) for k in ("Shift+A", "N", "Ctrl+Ctrl+A", "Ctrl+Alt+Esc", "Ctrl+Alt+", "Hyper+A", None, "Ctrl+F25")], [None] * 8)
     from faster_whisper.tokenizer import _LANGUAGE_CODES
-    check("SayNote's language list is Whisper's", saynote.LANGUAGES, list(_LANGUAGE_CODES))
+    check("Blurt's language list is Whisper's", saynote.LANGUAGES, list(_LANGUAGE_CODES))
     saynote.SETTINGS = Path(tmp) / "settings" / "settings.json"
     check("no settings file: the defaults", saynote.load_settings(), saynote.DEFAULTS)
     want = {"popup": False, "hotkey": "Ctrl+Shift+Space", "mic": "Microphone (X)", "language": "vi"}
@@ -150,7 +158,7 @@ def test_pure(tmp):
 
 def test_update(tmp):
     real = saynote.REPO, saynote.VERSION
-    saynote.REPO, saynote.VERSION = "me/SayNote", "1.2"
+    saynote.REPO, saynote.VERSION = "me/Blurt", "1.2"
     try:
         _test_update(tmp)
     finally:
@@ -159,29 +167,29 @@ def test_update(tmp):
 
 def _test_update(tmp):
     import functools, hashlib, http.server
-    url = "https://github.com/me/SayNote/releases/download/v1.3/SayNote-Setup-1.3.exe"
-    release = {"tag_name": "v1.3", "body": " Pinned notes. ", "assets": [{"name": "SayNote-Setup-1.3.exe", "browser_download_url": url, "digest": "sha256:AB"}]}
+    url = "https://github.com/me/Blurt/releases/download/v1.3/Blurt-Setup-1.3.exe"
+    release = {"tag_name": "v1.3", "body": " Pinned notes. ", "assets": [{"name": "Blurt-Setup-1.3.exe", "browser_download_url": url, "digest": "sha256:AB"}]}
     check("a newer release is offered", saynote.newer_release(release), {"version": "1.3", "notes": "Pinned notes.", "url": url, "sha256": "ab"})
     check("versions compare as numbers", (saynote.version_tuple("v1.10") > saynote.version_tuple("1.9"), saynote.version_tuple("beta")), (True, ()))
     not_offered = [dict(release, tag_name="v1.2"), dict(release, tag_name="v1.1"), dict(release, tag_name="nightly"), dict(release, assets=[]),
-                   dict(release, assets=[dict(release["assets"][0], browser_download_url="https://evil.example/SayNote-Setup-1.3.exe")])]
+                   dict(release, assets=[dict(release["assets"][0], browser_download_url="https://evil.example/Blurt-Setup-1.3.exe")])]
     check("same, older, odd, installer-less or foreign releases are not offered", [saynote.newer_release(r) for r in not_offered], [None] * 5)
 
     # download_update against a local server: the installer arrives whole, a damaged one is refused
     site = Path(tmp) / "site"
     site.mkdir()
-    (site / "SayNote-Setup-1.3.exe").write_bytes(os.urandom(3 << 20))
-    good = hashlib.sha256((site / "SayNote-Setup-1.3.exe").read_bytes()).hexdigest()
+    (site / "Blurt-Setup-1.3.exe").write_bytes(os.urandom(3 << 20))
+    good = hashlib.sha256((site / "Blurt-Setup-1.3.exe").read_bytes()).hexdigest()
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
     handler.func.log_message = lambda *a: None
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base, seen = f"http://127.0.0.1:{server.server_port}", []
     try:
-        setup = saynote.download_update({"url": f"{base}/SayNote-Setup-1.3.exe", "sha256": good}, seen.append)
-        check("the installer downloads whole", (setup.name, hashlib.sha256(setup.read_bytes()).hexdigest() == good, seen[-1]), ("SayNote-Setup-1.3.exe", True, 1.0))
+        setup = saynote.download_update({"url": f"{base}/Blurt-Setup-1.3.exe", "sha256": good}, seen.append)
+        check("the installer downloads whole", (setup.name, hashlib.sha256(setup.read_bytes()).hexdigest() == good, seen[-1]), ("Blurt-Setup-1.3.exe", True, 1.0))
         try:
-            saynote.download_update({"url": f"{base}/SayNote-Setup-1.3.exe", "sha256": "0" * 64})
+            saynote.download_update({"url": f"{base}/Blurt-Setup-1.3.exe", "sha256": "0" * 64})
             damaged = "accepted"
         except OSError as e:
             damaged = str(e)
@@ -190,18 +198,23 @@ def _test_update(tmp):
         server.shutdown()
 
 
-    # The hand-off: waits for SayNote to quit, runs the installer silently, starts SayNote. Stand-ins log what ran and when
+    # The hand-off: waits for Blurt to quit, runs the installer silently (which starts the new version). Only a failed
+    # install starts the old one again. Stand-ins log what ran and when
     odd = Path(tmp) / "it's a folder"
     odd.mkdir()
     (odd / "setup.bat").write_text('echo %* > "%~dp0installed.txt"\n')
+    (odd / "fail.bat").write_text('exit /b 1\n')
     (odd / "start.bat").write_text('echo started > "%~dp0started.txt"\n')
     t0 = time.time()
-    busy = subprocess.Popen(["ping", "-n", "3", "127.0.0.1"], stdout=subprocess.DEVNULL)  # SayNote, quitting in about 2 s
+    busy = subprocess.Popen(["ping", "-n", "3", "127.0.0.1"], stdout=subprocess.DEVNULL)  # Blurt, quitting in about 2 s
     saynote.install_after(busy.pid, odd / "setup.bat", odd / "start.bat").wait(60)
+    time.sleep(1)
     installed, started = odd / "installed.txt", odd / "started.txt"
-    check("the hand-off waits for SayNote, installs silently, then starts it (odd paths too)",
-          (installed.exists() and "/VERYSILENT" in installed.read_text(), wait(started.exists, 10, "SayNote to start"),
-           installed.exists() and installed.stat().st_mtime >= t0 + 1.5), (True, True, True))
+    check("the hand-off waits for Blurt, then installs silently (odd paths too)",
+          (installed.exists() and "/VERYSILENT" in installed.read_text(), installed.exists() and installed.stat().st_mtime >= t0 + 1.5,
+           started.exists()), (True, True, False))
+    saynote.install_after(busy.pid, odd / "fail.bat", odd / "start.bat").wait(60)
+    check("a failed install starts the old version again", wait(started.exists, 10, "the old version to start"), True)
 
 
 def resample(audio, speed):
@@ -238,7 +251,7 @@ def test_team(tmp):
 
 
 def test_exe(tmp):
-    exe = ROOT / "dist" / "SayNote" / "SayNote.exe"
+    exe = ROOT / "dist" / "Blurt" / "Blurt.exe"
     env = dict(os.environ, SAYNOTE_DIR=str(Path(tmp) / "exe"), SAYNOTE_SETTINGS=str(Path(tmp) / "exe-settings.json"))
     p = subprocess.Popen([str(exe)], env=env)
     try:
@@ -249,16 +262,16 @@ def test_exe(tmp):
             print("SKIP  exe hotkey checks: another app has the foreground, so no keys were pressed")
         else:
             tap_hotkey()
-            check("exe: hotkey starts listening", wait(lambda: win32gui.GetWindowText(hwnd) == "SayNote - Listening", 10, "Listening title"), True)
+            check("exe: hotkey starts listening", wait(lambda: win32gui.GetWindowText(hwnd) == "Blurt - Listening", 10, "Listening title"), True)
             shot(hwnd, "exe-recording")
             time.sleep(1)
             if user32.GetForegroundWindow() == hwnd:
                 tap_hotkey()
-                check("exe: second press saves and goes back to idle", wait(lambda: win32gui.GetWindowText(hwnd) == "SayNote", 120, "idle title"), True)
+                check("exe: second press saves and goes back to idle", wait(lambda: win32gui.GetWindowText(hwnd) == "Blurt", 120, "idle title"), True)
         second = subprocess.run([str(exe)], env=env, timeout=60)
         check("exe: a second launch exits and the first keeps running", (second.returncode, p.poll()), (0, None))
         subprocess.run([str(exe), "--quit"], env=env, timeout=60)  # what the uninstaller does
-        check("exe: --quit closes the running SayNote", wait(lambda: p.poll() is not None, 30, "SayNote to quit"), True)
+        check("exe: --quit closes the running Blurt", wait(lambda: p.poll() is not None, 30, "Blurt to quit"), True)
     finally:
         p.kill()
 
@@ -352,7 +365,7 @@ def test_app(tmp):
             played.clear()
             fire_hotkey(app)
             wait(lambda: app.stream is not None, 10, "recording")
-            seen["red dot"] = wait(lambda: app.icon._icon_handle == app.tray_icons[1] and app.icon.title == "SayNote - Listening", 5, "the red dot")
+            seen["red dot"] = wait(lambda: app.icon._icon_handle == app.tray_icons[1] and app.icon.title == "Blurt - Listening", 5, "the red dot")
             seen["told"] = [a[0] for a in notified]
             app.discard()
             seen["dot gone"] = wait(lambda: app.icon._icon_handle == app.tray_icons[0], 5, "the normal tray icon")
@@ -403,13 +416,13 @@ def test_app(tmp):
     check("app: no error or problem", (seen.get("error"), seen.get("problem")), (None, None))
     check("app: empty state shows the hotkey", "Ctrl+Alt+N" in seen.get("empty", ""), True)
     title, text = seen.get("recording", ("", ""))
-    check("app: recording title and instruction", (title, "again to save" in text), ("SayNote - Listening", True))
+    check("app: recording title and instruction", (title, "again to save" in text), ("Blurt - Listening", True))
     notes = seen.get("notes", [])
     said = notes[0]["text"].lower() if notes else ""
     print(f"        heard: {said!r}")
     check("app: one note with what was said", (len(notes), "milk" in said and "dentist" in said), (1, True))
     title, text = seen.get("saved", ("", ""))
-    check("app: page shows the new note, title back to idle", (title, "milk" in text.lower()), ("SayNote", True))
+    check("app: page shows the new note, title back to idle", (title, "milk" in text.lower()), ("Blurt", True))
     check("app: Delete button removes the note from disk and page", "milk" in seen.get("deleted", "milk").lower(), False)
     check("app: the page can't be navigated away", seen.get("href", "").startswith("http://127.0.0.1:"), True)
     check("app: doesn't hold up a Windows restart or sign-out", seen.get("endsession"), 1)

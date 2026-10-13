@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SayNote</title>
+<title>Blurt</title>
 <script src="preview.js"></script>
 <style>
 /* Windows 11 Fluent tokens. Base = the Mica-like window surface, layer = the content sheet. */
@@ -520,8 +520,8 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
         <div class="card">
           <svg class="ic" aria-hidden="true"><use href="#i-front"/></svg>
           <div class="txt">
-            <label class="lbl" for="s-popup">Bring SayNote to the front when you start recording</label>
-            <p class="desc" id="d-popup">When this is off, SayNote stays in the background: a short sound plays when it starts and stops listening, and the tray icon shows a red dot. Good for games and full-screen apps.</p>
+            <label class="lbl" for="s-popup">Bring Blurt to the front when you start recording</label>
+            <p class="desc" id="d-popup">When this is off, Blurt stays in the background: a short sound plays when it starts and stops listening, and the tray icon shows a red dot. Good for games and full-screen apps.</p>
             <p class="err" id="e-popup" hidden></p>
           </div>
           <div class="ctl"><input class="sw" id="s-popup" type="checkbox" role="switch" aria-describedby="d-popup e-popup"></div>
@@ -552,7 +552,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
           <div class="txt">
             <label class="lbl" for="s-lang">Language</label>
             <p class="desc" id="d-lang">The language you speak. Anything other than English downloads a larger speech model (about 480 MB) the first time.</p>
-            <p class="why" id="w-lang" tabindex="-1" hidden>You can change this once SayNote is ready.</p>
+            <p class="why" id="w-lang" tabindex="-1" hidden>You can change this once Blurt is ready.</p>
             <p class="err" id="e-language" hidden></p>
           </div>
           <div class="ctl"><span class="sel"><select id="s-lang" aria-describedby="d-lang w-lang e-language"></select></span></div>
@@ -561,7 +561,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
           <svg class="ic" aria-hidden="true"><use href="#i-power"/></svg>
           <div class="txt">
             <label class="lbl" for="s-autostart">Start with Windows</label>
-            <p class="desc" id="d-autostart">SayNote waits in the tray, so your shortcut works right after you sign in.</p>
+            <p class="desc" id="d-autostart">Blurt waits in the tray, so your shortcut works right after you sign in.</p>
             <p class="err" id="e-autostart" hidden></p>
           </div>
           <div class="ctl"><input class="sw" id="s-autostart" type="checkbox" role="switch" aria-describedby="d-autostart e-autostart"></div>
@@ -587,7 +587,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
         <button class="icon-btn" id="t-back" type="button" aria-label="Back to notes" title="Back to notes (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-back"/></svg></button>
         <h1 id="t-title" class="display">Team meeting</h1>
       </header>
-      <p class="t-intro">SayNote learns each person's voice first, then writes the meeting down with who said what. Let everyone know they're being recorded.</p>
+      <p class="t-intro">Blurt learns each person's voice first, then writes the meeting down with who said what. Let everyone know they're being recorded.</p>
       <div class="cards">
         <div class="card">
           <svg class="ic" aria-hidden="true"><use href="#i-people"/></svg>
@@ -626,10 +626,10 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   <section id="empty" hidden aria-label="Getting started">
     <div class="empty">
       <h2 class="display">Make your first voice note</h2>
-      <p class="hk">SayNote listens from any app, even when this window is closed.</p>
+      <p class="hk">Blurt listens from any app, even when this window is closed.</p>
       <p class="nohk" hidden>Use the button on the left to start and stop.</p>
       <ol class="steps">
-        <li><span class="num">1</span><div><strong><span class="hk">Press <span class="keys" data-keys></span></span><span class="nohk" hidden>Click Start recording</span></strong><p>SayNote starts listening.</p></div></li>
+        <li><span class="num">1</span><div><strong><span class="hk">Press <span class="keys" data-keys></span></span><span class="nohk" hidden>Click Start recording</span></strong><p>Blurt starts listening.</p></div></li>
         <li><span class="num">2</span><div><strong>Talk</strong><p>Say what's on your mind. Pause to think whenever you like.</p></div></li>
         <li><span class="num">3</span><div><strong><span class="hk">Press <span class="keys" data-keys></span> again</span><span class="nohk" hidden>Click Stop and save</span></strong><p>What you said is written down and saved here.</p></div></li>
       </ol>
@@ -1107,7 +1107,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   }
   const hasVoice = (name) => !!(team && team.voices.includes(name))
 
-  // One row per person: their name, whether SayNote knows their voice, and the voice check button
+  // One row per person: their name, whether Blurt knows their voice, and the voice check button
   function renderTeam() {
     const list = $('t-people'), count = Math.max(2, Math.min(team ? team.max : 10, people.length))
     while (list.children.length < count) {
@@ -1145,7 +1145,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     const b = $('t-start')
     b.textContent = why || need < 0 ? 'Start meeting' : `Voice check: ${names.filter((n) => !hasVoice(n)).length} to go`
     b.disabled = !!why || !!vcheck
-    $('t-why').textContent = why || (need < 0 ? 'Everyone has a saved voice.' : 'Each person reads one sentence so SayNote learns their voice.')
+    $('t-why').textContent = why || (need < 0 ? 'Everyone has a saved voice.' : 'Each person reads one sentence so Blurt learns their voice.')
   }
 
   function openCheck(i) {
@@ -1235,7 +1235,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
   }
 
   // ---- updates ----
-  // update: null, or {version, notes, progress}: progress null = available, 0..1 = downloading, 1 = installing (SayNote restarts)
+  // update: null, or {version, notes, progress}: progress null = available, 0..1 = downloading, 1 = installing (Blurt restarts)
   let upd = null, checking = false
   function showUpdate(u) {
     const was = upd
@@ -1243,8 +1243,8 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     $('update').hidden = !upd
     if (!upd) return
     const p = upd.progress, busy = p != null
-    const title = !busy ? `SayNote ${upd.version} is available` : p >= 1 ? 'Installing. SayNote will reopen in a moment.'
-      : `Downloading SayNote ${upd.version}… ${Math.round(p * 100)}%`
+    const title = !busy ? `Blurt ${upd.version} is available` : p >= 1 ? 'Installing. Blurt will reopen in a moment.'
+      : `Downloading Blurt ${upd.version}… ${Math.round(p * 100)}%`
     if ($('up-title').textContent !== title) $('up-title').textContent = title
     if ($('up-notes').textContent !== (upd.notes || '')) $('up-notes').textContent = upd.notes || ''
     $('up-notes-box').hidden = !upd.notes || busy
@@ -1252,7 +1252,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     $('up-fill').style.transform = `scaleX(${busy ? Math.max(0.02, p) : 0})`
     if (busy && document.activeElement === $('up-go')) $('up-title').focus()  // the button is about to hide
     $('up-go').hidden = busy
-    if (!was || was.version !== upd.version) announce(`SayNote ${upd.version} is available.`)
+    if (!was || was.version !== upd.version) announce(`Blurt ${upd.version} is available.`)
     if (busy && p >= 1 && !(was && was.progress >= 1)) announce(title)
   }
 
@@ -1342,7 +1342,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     }
     if (s.language && ![...lang.options].some((o) => o.value === s.language)) lang.append(new Option(s.language, s.language))
     lang.value = s.language || 'en'
-    $('s-ver').textContent = s.version ? 'SayNote ' + s.version : ''
+    $('s-ver').textContent = s.version ? 'Blurt ' + s.version : ''
     fillVoices(s.voices || [])
     if (s.hotkey && s.hotkey !== hotkey && !capturing) { hotkey = s.hotkey; fillKeys() }
   }
@@ -1538,7 +1538,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     $('up-status').textContent = 'Checking…'
     Promise.resolve(api.check_update()).then((r) => {
       if (r && r.update) showUpdate(r.update)
-      $('up-status').textContent = r && r.error ? r.error : r && r.update ? `SayNote ${r.update.version} is available: Update is at the bottom left.` : "You're up to date."
+      $('up-status').textContent = r && r.error ? r.error : r && r.update ? `Blurt ${r.update.version} is available: Update is at the bottom left.` : "You're up to date."
     }, () => { $('up-status').textContent = "Couldn't check for updates." }).finally(() => { checking = false })
   })
   $('fix-hotkey').addEventListener('click', () => openSettings(() => {
@@ -1616,7 +1616,7 @@ main > section { height: 100%; overflow-y: auto; animation: enter 167ms var(--ea
     api = window.pywebview.api
     api.get_state().then((s) => { if (!statePushed) applyState(s) }, () => {  // a push that arrived first is newer: keep it
       if (!statePushed) applyState({ state: 'idle' })
-      toast("SayNote didn't start properly. Quit it from the tray icon and open it again.", 'error')
+      toast("Blurt didn't start properly. Quit it from the tray icon and open it again.", 'error')
     })
     api.list_notes().then((list) => {
       const have = new Set(notes.map((n) => n.id))

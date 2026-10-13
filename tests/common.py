@@ -1,5 +1,5 @@
 """Helpers shared by the test files. Kept out of test_voice.py because importing that pulls in voice.py and
-pywinauto, which changes the COM threading mode that SayNote's window (WinForms) needs."""
+pywinauto, which changes the COM threading mode that Blurt's window (WinForms) needs."""
 import os, subprocess, tempfile
 
 FAILS = []

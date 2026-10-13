@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 
-# build.ps1's output: PyInstaller's, and the installer (dist\SayNote-Setup-*.exe) that goes to GitHub Releases
+# build.ps1's output: PyInstaller's, and the installer (dist\Blurt-Setup-*.exe) that goes to GitHub Releases
 build/
 dist/
 
@@ -17,3 +17,4 @@ NOTES.md
 voice.py
 tests/test_voice.py
 tests/testapp.ps1
+
