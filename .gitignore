@@ -3,14 +3,14 @@ __pycache__/
 *.pyc
 .venv/
 
-# build.ps1's output: PyInstaller's, and the installer (dist\Blurt-Setup-*.exe) that goes to GitHub Releases
+# build.ps1's output: PyInstaller's, and the installer (dist\BlurtPad-Setup-*.exe) that goes to GitHub Releases
 build/
 dist/
 
 # Building and publishing (the installer, releases): kept on this PC only, see NOTES.md
 build.ps1
 release.ps1
-SayNote.iss
+BlurtPad.iss
 
 # Kept on this PC only: the older VoicePrj tool and its notes (they describe this PC)
 NOTES.md

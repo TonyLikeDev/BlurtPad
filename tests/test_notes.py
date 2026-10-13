@@ -2,12 +2,12 @@
 pure: note files, the delete guard, the Recycle Bin.
 update: offering a new version and downloading its installer (from a local server), in temp folders.
 team: a meeting of four synthetic voices, transcribed with who said what (Whisper and the voice model; no microphone).
-exe:  the built dist\\Blurt\\Blurt.exe: it starts, the hotkey flips the title, a second launch exits. Build it first.
-      Presses Ctrl+Alt+N for real, but only while Blurt's own window is in front; otherwise those checks are skipped.
+exe:  the built dist\\BlurtPad\\BlurtPad.exe: it starts, the hotkey flips the title, a second launch exits. Build it first.
+      Presses Ctrl+Alt+N for real, but only while BlurtPad's own window is in front; otherwise those checks are skipped.
 app:  the real window, hotkey thread and Whisper in this process. Fires the hotkey by posting WM_HOTKEY to the hotkey thread
       (no key presses) and swaps what the mic heard for a sentence from Windows' built-in TTS; nothing is played.
-Screenshots use PrintWindow (Blurt's own pixels, never other apps) and go to %TEMP%\\saynote-shots.
-Everything uses a temp notes folder. Quit a running Blurt first: they share the hotkey. 'exe' must run before 'app'."""
+Screenshots use PrintWindow (BlurtPad's own pixels, never other apps) and go to %TEMP%\\blurtpad-shots.
+Everything uses a temp notes folder. Quit a running BlurtPad first: they share the hotkey. 'exe' must run before 'app'."""
 import ctypes, json, os, shutil, subprocess, sys, tempfile, threading, time
 from datetime import datetime
 from pathlib import Path
@@ -17,11 +17,11 @@ sys.path[:0] = [str(ROOT)]
 ctypes.windll.shcore.SetProcessDpiAwareness(2)  # window rectangles and screenshots in real pixels
 import win32gui, win32process, win32ui
 from PIL import Image
-import saynote
+import blurtpad
 from common import FAILS, check, tts
 
 user32 = ctypes.windll.user32
-SHOTS = Path(tempfile.gettempdir()) / "saynote-shots"
+SHOTS = Path(tempfile.gettempdir()) / "blurtpad-shots"
 
 
 def wait(cond, secs=30, what="condition"):
@@ -38,7 +38,7 @@ def fire_hotkey(app):
 
 
 def tap_hotkey():
-    n = saynote.parse_hotkey(saynote.DEFAULTS["hotkey"])[2]
+    n = blurtpad.parse_hotkey(blurtpad.DEFAULTS["hotkey"])[2]
     for vk in (0x11, 0x12, n):  # Ctrl, Alt, N
         user32.keybd_event(vk, 0, 0, 0)
     for vk in (n, 0x12, 0x11):
@@ -48,7 +48,7 @@ def tap_hotkey():
 def windows_of(pid):
     found = []
     win32gui.EnumWindows(lambda h, _: found.append(h) if win32gui.IsWindowVisible(h) and win32process.GetWindowThreadProcessId(h)[1] == pid
-                         and win32gui.GetWindowText(h).startswith("Blurt") else None, None)
+                         and win32gui.GetWindowText(h).startswith("BlurtPad") else None, None)
     return found
 
 
@@ -74,122 +74,114 @@ def shot(hwnd, name):
 
 
 def test_pure(tmp):
-    docs = Path(tmp) / "docs"  # Documents, with notes from when Blurt was SayNote
-    (docs / "SayNote").mkdir(parents=True)
-    (docs / "SayNote" / "old.txt").write_text("kept")
-    real, saynote._documents, saynote.NOTES = saynote._documents, lambda: docs, docs / "Blurt"
-    saynote.move_old_notes()
-    saynote._documents = real
-    check("Documents\\SayNote becomes Documents\\Blurt", ((docs / "Blurt" / "old.txt").read_text(), (docs / "SayNote").exists()), ("kept", False))
-
-    saynote.NOTES = Path(tmp) / "pure"
+    blurtpad.NOTES = Path(tmp) / "pure"
     t = datetime(2026, 10, 11, 9, 0, 0)
-    a, b = saynote.save_note("first", t), saynote.save_note("second", t)
+    a, b = blurtpad.save_note("first", t), blurtpad.save_note("second", t)
     check("same second never overwrites", (a.name, b.name), ("2026-10-11 09-00-00.txt", "2026-10-11 09-00-01.txt"))
-    saynote.save_note("older", datetime(2025, 1, 1))
-    notes = saynote.list_notes()
+    blurtpad.save_note("older", datetime(2025, 1, 1))
+    notes = blurtpad.list_notes()
     check("newest first", [n["text"] for n in notes], ["second", "first", "older"])
     check("note fields", notes[0], {"id": "2026-10-11 09-00-01", "created": int(datetime(2026, 10, 11, 9, 0, 1).timestamp() * 1000), "text": "second"})
     outside = Path(tmp) / "outside.txt"
     outside.write_text("keep me")
-    check("edit keeps the note's name, so its date", (saynote.edit_note(b.stem, "  changed\nline two "), b.read_text(encoding="utf-8"),
-                                                       saynote.list_notes()[0]["id"]), (True, "changed\nline two\n", b.stem))
+    check("edit keeps the note's name, so its date", (blurtpad.edit_note(b.stem, "  changed\nline two "), b.read_text(encoding="utf-8"),
+                                                       blurtpad.list_notes()[0]["id"]), (True, "changed\nline two\n", b.stem))
     check("edit refuses names outside the notes folder, and text that isn't text",
-          [saynote.edit_note("../outside", "x"), saynote.edit_note("..\\outside", "x"), saynote.edit_note(b.stem, None), outside.read_text()],
+          [blurtpad.edit_note("../outside", "x"), blurtpad.edit_note("..\\outside", "x"), blurtpad.edit_note(b.stem, None), outside.read_text()],
           [False, False, False, "keep me"])
-    mine = saynote.NOTES / "groceries.txt"  # a note you added yourself is dated by its file time: editing keeps it
+    mine = blurtpad.NOTES / "groceries.txt"  # a note you added yourself is dated by its file time: editing keeps it
     mine.write_text("eggs", encoding="utf-8")
     os.utime(mine, (1.7e9, 1.7e9))
-    check("edit keeps the date of a note not named by date", (saynote.edit_note("groceries", "eggs, milk"), mine.stat().st_mtime), (True, 1.7e9))
+    check("edit keeps the date of a note not named by date", (blurtpad.edit_note("groceries", "eggs, milk"), mine.stat().st_mtime), (True, 1.7e9))
     mine.write_bytes(b"caf\xe9")  # cp1252, not UTF-8
-    check("edit refuses a note in another encoding instead of mangling it", (saynote.edit_note("groceries", "x"), mine.read_bytes()), (False, b"caf\xe9"))
+    check("edit refuses a note in another encoding instead of mangling it", (blurtpad.edit_note("groceries", "x"), mine.read_bytes()), (False, b"caf\xe9"))
     mine.unlink()
-    check("delete refuses names outside the notes folder", [saynote.delete_note(i) for i in ("../outside", "..\\outside", "nope")], [False] * 3)
-    check("delete moves the note away", (saynote.delete_note("2026-10-11 09-00-00"), a.exists(), outside.exists()), (True, False, True))
-    check("wav fallback", saynote.save_audio(saynote.np.zeros(16000, "float32"), t).stat().st_size, 44 + 32000)
-    log, saynote.LOG = saynote.LOG, Path(tmp) / "appdata" / "saynote.log"
-    saynote.NOTES = outside / "notes"  # under a file: can't be created, like an offline OneDrive folder
-    check("wav goes next to the log when the notes folder can't be written", saynote.save_audio(saynote.np.zeros(16000, "float32"), t).parent, saynote.LOG.parent)
-    saynote.NOTES, saynote.LOG = Path(tmp) / "pure", log
+    check("delete refuses names outside the notes folder", [blurtpad.delete_note(i) for i in ("../outside", "..\\outside", "nope")], [False] * 3)
+    check("delete moves the note away", (blurtpad.delete_note("2026-10-11 09-00-00"), a.exists(), outside.exists()), (True, False, True))
+    check("wav fallback", blurtpad.save_audio(blurtpad.np.zeros(16000, "float32"), t).stat().st_size, 44 + 32000)
+    log, blurtpad.LOG = blurtpad.LOG, Path(tmp) / "appdata" / "blurtpad.log"
+    blurtpad.NOTES = outside / "notes"  # under a file: can't be created, like an offline OneDrive folder
+    check("wav goes next to the log when the notes folder can't be written", blurtpad.save_audio(blurtpad.np.zeros(16000, "float32"), t).parent, blurtpad.LOG.parent)
+    blurtpad.NOTES, blurtpad.LOG = Path(tmp) / "pure", log
     k32 = ctypes.WinDLL("kernel32")
     k32.CreateFileW.restype = ctypes.c_void_p
     held = k32.CreateFileW(str(b), 0x80000000, 0, None, 3, 0x80, None)  # GENERIC_READ, no sharing: as if another program had it open
     try:
-        check("a note that can't be read doesn't hide the others", [n["text"] for n in saynote.list_notes()], ["older"])
+        check("a note that can't be read doesn't hide the others", [n["text"] for n in blurtpad.list_notes()], ["older"])
     finally:
         k32.CloseHandle(ctypes.c_void_p(held))
 
-    check("shortcuts are written one way", [saynote.parse_hotkey(k) for k in ("ctrl+alt+n", "F9", "win+shift+space")],
+    check("shortcuts are written one way", [blurtpad.parse_hotkey(k) for k in ("ctrl+alt+n", "F9", "win+shift+space")],
           [("Ctrl+Alt+N", 0x4003, 0x4E), ("F9", 0x4000, 0x78), ("Shift+Win+Space", 0x400C, 0x20)])
     check("shortcuts that typing would set off, or that aren't keys, are refused",
-          [saynote.parse_hotkey(k) for k in ("Shift+A", "N", "Ctrl+Ctrl+A", "Ctrl+Alt+Esc", "Ctrl+Alt+", "Hyper+A", None, "Ctrl+F25")], [None] * 8)
+          [blurtpad.parse_hotkey(k) for k in ("Shift+A", "N", "Ctrl+Ctrl+A", "Ctrl+Alt+Esc", "Ctrl+Alt+", "Hyper+A", None, "Ctrl+F25")], [None] * 8)
     from faster_whisper.tokenizer import _LANGUAGE_CODES
-    check("Blurt's language list is Whisper's", saynote.LANGUAGES, list(_LANGUAGE_CODES))
-    saynote.SETTINGS = Path(tmp) / "settings" / "settings.json"
-    check("no settings file: the defaults", saynote.load_settings(), saynote.DEFAULTS)
+    check("BlurtPad's language list is Whisper's", blurtpad.LANGUAGES, list(_LANGUAGE_CODES))
+    blurtpad.SETTINGS = Path(tmp) / "settings" / "settings.json"
+    check("no settings file: the defaults", blurtpad.load_settings(), blurtpad.DEFAULTS)
     want = {"popup": False, "hotkey": "Ctrl+Shift+Space", "mic": "Microphone (X)", "language": "vi"}
-    saynote.save_settings(want)
-    check("settings come back as saved", saynote.load_settings(), want)
+    blurtpad.save_settings(want)
+    check("settings come back as saved", blurtpad.load_settings(), want)
     for junk in ('{"popup": "no", "hotkey": "Shift+A", "mic": 3, "language": "xx"}', "not json", "[1, 2]"):
-        saynote.SETTINGS.write_text(junk)
-        check(f"settings file {junk[:20]!r}: the defaults", saynote.load_settings(), saynote.DEFAULTS)
-    mics = saynote.list_mics()
+        blurtpad.SETTINGS.write_text(junk)
+        check(f"settings file {junk[:20]!r}: the defaults", blurtpad.load_settings(), blurtpad.DEFAULTS)
+    mics = blurtpad.list_mics()
     print(f"        microphones: {[m['name'] for m in mics]}")
     check("microphones have an id and a full name", all(set(m) == {"id", "name"} and m["name"].startswith(m["id"].split(" #")[0]) for m in mics), True)
     check("every microphone can be chosen", len({m["id"] for m in mics}), len(mics))
-    check("the tray's recording icon can be made at tray sizes", all(saynote.recording_icon(s) for s in (16, 20, 24, 28, 32)), True)
+    check("the tray's recording icon can be made at tray sizes", all(blurtpad.recording_icon(s) for s in (16, 20, 24, 28, 32)), True)
 
-    np = saynote.np
-    check("names: one line, no commas, at most 40 characters", [saynote.clean_name(n) for n in ("  Linh  ", "Tony, Jr\n", "x" * 50, None)],
+    np = blurtpad.np
+    check("names: one line, no commas, at most 40 characters", [blurtpad.clean_name(n) for n in ("  Linh  ", "Tony, Jr\n", "x" * 50, None)],
           ["Linh", "Tony Jr", "x" * 40, ""])
-    check("meeting times", [saynote.clock(t) for t in (5, 65, 3725)], ["0:05", "1:05", "1:02:05"])
+    check("meeting times", [blurtpad.clock(t) for t in (5, 65, 3725)], ["0:05", "1:05", "1:02:05"])
     a, b = np.array([1, 0], "float32"), np.array([0, 1], "float32")
-    lines = saynote.team_lines([(0, "Hi.", a), (2, "Me too.", a), (5, "Yes.", b), (9, "Who?", np.array([.3, .3], "float32"))], {"Linh": a, "Minh": b})
+    lines = blurtpad.team_lines([(0, "Hi.", a), (2, "Me too.", a), (5, "Yes.", b), (9, "Who?", np.array([.3, .3], "float32"))], {"Linh": a, "Minh": b})
     check("sentences go to the closest voice; one person's in a row join; faint matches are Unknown", lines,
           [["Linh", 0, "Hi. Me too."], ["Minh", 5, "Yes."], ["Unknown", 9, "Who?"]])
-    check("a team note's text", saynote.team_text(["Linh", "Minh"], lines[:2]), "Team note: Linh, Minh\n\nLinh (0:00): Hi. Me too.\n\nMinh (0:05): Yes.")
-    saynote.VOICES = Path(tmp) / "voices.json"
-    check("no voices file: no saved voices", saynote.load_voices(), {})
-    saynote.save_voices({"Linh": a})
-    check("voices come back as saved", {n: v.tolist() for n, v in saynote.load_voices().items()}, {"Linh": [1.0, 0.0]})
-    tone = (np.sin(np.arange(3 * saynote.RATE) / saynote.RATE * 2 * np.pi * 200) * .1).astype("float32")
-    check("a voice check hears speech, not silence", (saynote.heard_speech(np.zeros(3 * saynote.RATE, "float32")), saynote.heard_speech(tone)), (False, True))
+    check("a team note's text", blurtpad.team_text(["Linh", "Minh"], lines[:2]), "Team note: Linh, Minh\n\nLinh (0:00): Hi. Me too.\n\nMinh (0:05): Yes.")
+    blurtpad.VOICES = Path(tmp) / "voices.json"
+    check("no voices file: no saved voices", blurtpad.load_voices(), {})
+    blurtpad.save_voices({"Linh": a})
+    check("voices come back as saved", {n: v.tolist() for n, v in blurtpad.load_voices().items()}, {"Linh": [1.0, 0.0]})
+    tone = (np.sin(np.arange(3 * blurtpad.RATE) / blurtpad.RATE * 2 * np.pi * 200) * .1).astype("float32")
+    check("a voice check hears speech, not silence", (blurtpad.heard_speech(np.zeros(3 * blurtpad.RATE, "float32")), blurtpad.heard_speech(tone)), (False, True))
 
 
 def test_update(tmp):
-    real = saynote.REPO, saynote.VERSION
-    saynote.REPO, saynote.VERSION = "me/Blurt", "1.2"
+    real = blurtpad.REPO, blurtpad.VERSION
+    blurtpad.REPO, blurtpad.VERSION = "me/BlurtPad", "1.2"
     try:
         _test_update(tmp)
     finally:
-        saynote.REPO, saynote.VERSION = real
+        blurtpad.REPO, blurtpad.VERSION = real
 
 
 def _test_update(tmp):
     import functools, hashlib, http.server
-    url = "https://github.com/me/Blurt/releases/download/v1.3/Blurt-Setup-1.3.exe"
-    release = {"tag_name": "v1.3", "body": " Pinned notes. ", "assets": [{"name": "Blurt-Setup-1.3.exe", "browser_download_url": url, "digest": "sha256:AB"}]}
-    check("a newer release is offered", saynote.newer_release(release), {"version": "1.3", "notes": "Pinned notes.", "url": url, "sha256": "ab"})
-    check("versions compare as numbers", (saynote.version_tuple("v1.10") > saynote.version_tuple("1.9"), saynote.version_tuple("beta")), (True, ()))
+    url = "https://github.com/me/BlurtPad/releases/download/v1.3/BlurtPad-Setup-1.3.exe"
+    release = {"tag_name": "v1.3", "body": " Pinned notes. ", "assets": [{"name": "BlurtPad-Setup-1.3.exe", "browser_download_url": url, "digest": "sha256:AB"}]}
+    check("a newer release is offered", blurtpad.newer_release(release), {"version": "1.3", "notes": "Pinned notes.", "url": url, "sha256": "ab"})
+    check("versions compare as numbers", (blurtpad.version_tuple("v1.10") > blurtpad.version_tuple("1.9"), blurtpad.version_tuple("beta")), (True, ()))
     not_offered = [dict(release, tag_name="v1.2"), dict(release, tag_name="v1.1"), dict(release, tag_name="nightly"), dict(release, assets=[]),
-                   dict(release, assets=[dict(release["assets"][0], browser_download_url="https://evil.example/Blurt-Setup-1.3.exe")])]
-    check("same, older, odd, installer-less or foreign releases are not offered", [saynote.newer_release(r) for r in not_offered], [None] * 5)
+                   dict(release, assets=[dict(release["assets"][0], browser_download_url="https://evil.example/BlurtPad-Setup-1.3.exe")])]
+    check("same, older, odd, installer-less or foreign releases are not offered", [blurtpad.newer_release(r) for r in not_offered], [None] * 5)
 
     # download_update against a local server: the installer arrives whole, a damaged one is refused
     site = Path(tmp) / "site"
     site.mkdir()
-    (site / "Blurt-Setup-1.3.exe").write_bytes(os.urandom(3 << 20))
-    good = hashlib.sha256((site / "Blurt-Setup-1.3.exe").read_bytes()).hexdigest()
+    (site / "BlurtPad-Setup-1.3.exe").write_bytes(os.urandom(3 << 20))
+    good = hashlib.sha256((site / "BlurtPad-Setup-1.3.exe").read_bytes()).hexdigest()
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
     handler.func.log_message = lambda *a: None
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base, seen = f"http://127.0.0.1:{server.server_port}", []
     try:
-        setup = saynote.download_update({"url": f"{base}/Blurt-Setup-1.3.exe", "sha256": good}, seen.append)
-        check("the installer downloads whole", (setup.name, hashlib.sha256(setup.read_bytes()).hexdigest() == good, seen[-1]), ("Blurt-Setup-1.3.exe", True, 1.0))
+        setup = blurtpad.download_update({"url": f"{base}/BlurtPad-Setup-1.3.exe", "sha256": good}, seen.append)
+        check("the installer downloads whole", (setup.name, hashlib.sha256(setup.read_bytes()).hexdigest() == good, seen[-1]), ("BlurtPad-Setup-1.3.exe", True, 1.0))
         try:
-            saynote.download_update({"url": f"{base}/Blurt-Setup-1.3.exe", "sha256": "0" * 64})
+            blurtpad.download_update({"url": f"{base}/BlurtPad-Setup-1.3.exe", "sha256": "0" * 64})
             damaged = "accepted"
         except OSError as e:
             damaged = str(e)
@@ -198,7 +190,7 @@ def _test_update(tmp):
         server.shutdown()
 
 
-    # The hand-off: waits for Blurt to quit, runs the installer silently (which starts the new version). Only a failed
+    # The hand-off: waits for BlurtPad to quit, runs the installer silently (which starts the new version). Only a failed
     # install starts the old one again. Stand-ins log what ran and when
     odd = Path(tmp) / "it's a folder"
     odd.mkdir()
@@ -206,53 +198,53 @@ def _test_update(tmp):
     (odd / "fail.bat").write_text('exit /b 1\n')
     (odd / "start.bat").write_text('echo started > "%~dp0started.txt"\n')
     t0 = time.time()
-    busy = subprocess.Popen(["ping", "-n", "3", "127.0.0.1"], stdout=subprocess.DEVNULL)  # Blurt, quitting in about 2 s
-    saynote.install_after(busy.pid, odd / "setup.bat", odd / "start.bat").wait(60)
+    busy = subprocess.Popen(["ping", "-n", "3", "127.0.0.1"], stdout=subprocess.DEVNULL)  # BlurtPad, quitting in about 2 s
+    blurtpad.install_after(busy.pid, odd / "setup.bat", odd / "start.bat").wait(60)
     time.sleep(1)
     installed, started = odd / "installed.txt", odd / "started.txt"
-    check("the hand-off waits for Blurt, then installs silently (odd paths too)",
+    check("the hand-off waits for BlurtPad, then installs silently (odd paths too)",
           (installed.exists() and "/VERYSILENT" in installed.read_text(), installed.exists() and installed.stat().st_mtime >= t0 + 1.5,
            started.exists()), (True, True, False))
-    saynote.install_after(busy.pid, odd / "fail.bat", odd / "start.bat").wait(60)
+    blurtpad.install_after(busy.pid, odd / "fail.bat", odd / "start.bat").wait(60)
     check("a failed install starts the old version again", wait(started.exists, 10, "the old version to start"), True)
 
 
 def resample(audio, speed):
     """Faster and higher, or slower and lower: another-sounding person from the same voice."""
     n = int(len(audio) / speed)
-    return saynote.np.interp(saynote.np.linspace(0, len(audio) - 1, n), saynote.np.arange(len(audio)), audio).astype("float32")
+    return blurtpad.np.interp(blurtpad.np.linspace(0, len(audio) - 1, n), blurtpad.np.arange(len(audio)), audio).astype("float32")
 
 
 def test_team(tmp):
     from faster_whisper import WhisperModel
     from faster_whisper.audio import decode_audio
-    np = saynote.np
+    np = blurtpad.np
     people = {"Linh": ("Zira", 1.0), "Minh": ("David", 1.0), "Tony": ("David", 1.18), "An": ("Zira", 0.86)}
     turns = [("Linh", "Okay, let's start. The main topic today is the release date."), ("Minh", "I think we can ship on Friday."),
              ("Tony", "Testing is almost done. I found two small bugs yesterday."), ("An", "Are they serious, or can they wait?"),
              ("Tony", "They can wait."), ("Minh", "Yes, agreed."), ("An", "I will write the release notes tomorrow morning.")]
-    wavs = tts([saynote.SENTENCE] + [line for _, line in turns])
+    wavs = tts([blurtpad.SENTENCE] + [line for _, line in turns])
 
     def voice(who, i):
         base, speed = people[who]
-        audio = decode_audio(os.path.join(wavs, f"{base}_{i}.wav"), sampling_rate=saynote.RATE)
+        audio = decode_audio(os.path.join(wavs, f"{base}_{i}.wav"), sampling_rate=blurtpad.RATE)
         return audio if speed == 1.0 else resample(audio, speed)
-    voices = {n: saynote.fingerprint(voice(n, 0)) for n in people}
-    gap = np.zeros(saynote.RATE // 2, "float32")
+    voices = {n: blurtpad.fingerprint(voice(n, 0)) for n in people}
+    gap = np.zeros(blurtpad.RATE // 2, "float32")
     meeting = np.concatenate([part for i, (who, _) in enumerate(turns) for part in (voice(who, i + 1), gap)])
-    model = WhisperModel("small.en", device="cpu", compute_type="int8", cpu_threads=saynote.THREADS, local_files_only=True)
+    model = WhisperModel("small.en", device="cpu", compute_type="int8", cpu_threads=blurtpad.THREADS, local_files_only=True)
     seen, start = [], time.time()
-    text = saynote.transcribe_team(model, "en", meeting, list(people), voices, seen.append)
+    text = blurtpad.transcribe_team(model, "en", meeting, list(people), voices, seen.append)
     shutil.rmtree(wavs, ignore_errors=True)
-    print(f"        {len(meeting) / saynote.RATE:.0f} s meeting in {time.time() - start:.1f} s:\n          " + text.replace("\n\n", "\n          "))
+    print(f"        {len(meeting) / blurtpad.RATE:.0f} s meeting in {time.time() - start:.1f} s:\n          " + text.replace("\n\n", "\n          "))
     check("team: the note lists who was there", text.split("\n")[0], "Team note: Linh, Minh, Tony, An")
     check("team: every line is named after who said it", [line.split(" (")[0] for line in text.split("\n\n")[1:]], [who for who, _ in turns])
     check("team: progress is reported to the end", seen[-1] > .9, True)
 
 
 def test_exe(tmp):
-    exe = ROOT / "dist" / "Blurt" / "Blurt.exe"
-    env = dict(os.environ, SAYNOTE_DIR=str(Path(tmp) / "exe"), SAYNOTE_SETTINGS=str(Path(tmp) / "exe-settings.json"))
+    exe = ROOT / "dist" / "BlurtPad" / "BlurtPad.exe"
+    env = dict(os.environ, BLURTPAD_DIR=str(Path(tmp) / "exe"), BLURTPAD_SETTINGS=str(Path(tmp) / "exe-settings.json"))
     p = subprocess.Popen([str(exe)], env=env)
     try:
         hwnd = wait(lambda: (windows_of(p.pid) or [None])[0], 60, "the exe's window")
@@ -262,16 +254,16 @@ def test_exe(tmp):
             print("SKIP  exe hotkey checks: another app has the foreground, so no keys were pressed")
         else:
             tap_hotkey()
-            check("exe: hotkey starts listening", wait(lambda: win32gui.GetWindowText(hwnd) == "Blurt - Listening", 10, "Listening title"), True)
+            check("exe: hotkey starts listening", wait(lambda: win32gui.GetWindowText(hwnd) == "BlurtPad - Listening", 10, "Listening title"), True)
             shot(hwnd, "exe-recording")
             time.sleep(1)
             if user32.GetForegroundWindow() == hwnd:
                 tap_hotkey()
-                check("exe: second press saves and goes back to idle", wait(lambda: win32gui.GetWindowText(hwnd) == "Blurt", 120, "idle title"), True)
+                check("exe: second press saves and goes back to idle", wait(lambda: win32gui.GetWindowText(hwnd) == "BlurtPad", 120, "idle title"), True)
         second = subprocess.run([str(exe)], env=env, timeout=60)
         check("exe: a second launch exits and the first keeps running", (second.returncode, p.poll()), (0, None))
         subprocess.run([str(exe), "--quit"], env=env, timeout=60)  # what the uninstaller does
-        check("exe: --quit closes the running Blurt", wait(lambda: p.poll() is not None, 30, "Blurt to quit"), True)
+        check("exe: --quit closes the running BlurtPad", wait(lambda: p.poll() is not None, 30, "BlurtPad to quit"), True)
     finally:
         p.kill()
 
@@ -284,10 +276,10 @@ class Muted(list):
 def test_app(tmp):
     from faster_whisper.audio import decode_audio
     import faster_whisper
-    saynote.NOTES, saynote.SETTINGS, saynote.VOICES = Path(tmp) / "app", Path(tmp) / "app-settings.json", Path(tmp) / "app-voices.json"
+    blurtpad.NOTES, blurtpad.SETTINGS, blurtpad.VOICES = Path(tmp) / "app", Path(tmp) / "app-settings.json", Path(tmp) / "app-voices.json"
     played, notified, pushed = [], [], []
-    saynote.play = played.append  # the start and stop sounds: listed, not played
-    wavs = tts(["Buy milk and call the dentist on Friday.", saynote.SENTENCE, "We should ship the new version on Friday.", "I agree, the tests are done."])
+    blurtpad.play = played.append  # the start and stop sounds: listed, not played
+    wavs = tts(["Buy milk and call the dentist on Friday.", blurtpad.SENTENCE, "We should ship the new version on Friday.", "I agree, the tests are done."])
     clip = decode_audio(os.path.join(wavs, "Zira_0.wav"), sampling_rate=16000)
     said = {(v, i): decode_audio(os.path.join(wavs, f"{v}_{i}.wav"), sampling_rate=16000) for v in ("David", "Zira") for i in (1, 2, 3)}
     seen = {}
@@ -315,14 +307,14 @@ def test_app(tmp):
             time.sleep(1)
             seen["saved"] = (app.window.title, js("document.body.innerText"))
             shot(app.hwnd, "app-saved")
-            seen["notes"] = saynote.list_notes()
+            seen["notes"] = blurtpad.list_notes()
             # Fix a word in the page's editor, as typing would: it saves to the file on its own
             js("const b = document.getElementById('r-body'); b.focus(); b.textContent = 'Buy oat milk and call the dentist on Friday.';"
                "b.dispatchEvent(new InputEvent('input', {bubbles: true}))")
-            seen["edited"] = wait(lambda: [n["text"] for n in saynote.list_notes()] == ["Buy oat milk and call the dentist on Friday."], 10, "the edit to reach the file")
-            seen["edited name"] = [n["id"] for n in saynote.list_notes()] == [n["id"] for n in seen["notes"]]
+            seen["edited"] = wait(lambda: [n["text"] for n in blurtpad.list_notes()] == ["Buy oat milk and call the dentist on Friday."], 10, "the edit to reach the file")
+            seen["edited name"] = [n["id"] for n in blurtpad.list_notes()] == [n["id"] for n in seen["notes"]]
             js("document.getElementById('delete').click()")  # the page's Delete button -> api.delete_note -> Recycle Bin
-            wait(lambda: not saynote.list_notes(), 10, "the note to leave the folder")
+            wait(lambda: not blurtpad.list_notes(), 10, "the note to leave the folder")
             time.sleep(0.5)
             seen["deleted"] = js("document.body.innerText")
 
@@ -330,15 +322,15 @@ def test_app(tmp):
             fire_hotkey(app)
             wait(lambda: app.stream is not None, 10, "recording")
             app.buf = Muted([clip[:, None]])
-            seen["discard"] = (app.discard(), app.stream, app.busy, saynote.list_notes(), app.get_state()["state"])
+            seen["discard"] = (app.discard(), app.stream, app.busy, blurtpad.list_notes(), app.get_state()["state"])
             seen["undo"] = app.undo_discard()
             wait(lambda: not app.busy, 120, "transcription after Undo")
-            seen["undone"] = [n["text"] for n in saynote.list_notes()]
+            seen["undone"] = [n["text"] for n in blurtpad.list_notes()]
             seen["undo twice"] = app.undo_discard()
 
             # Shortcuts: a new one works, one another program holds is refused and the old one stays
             r = app.set_setting("hotkey", "ctrl+alt+shift+f11")
-            seen["hotkey"] = (r["ok"], app.get_state()["hotkey"], app.hotkey_ok, saynote.load_settings()["hotkey"])
+            seen["hotkey"] = (r["ok"], app.get_state()["hotkey"], app.hotkey_ok, blurtpad.load_settings()["hotkey"])
             fire_hotkey(app)
             seen["new hotkey records"] = wait(lambda: app.stream is not None, 10, "recording on the new shortcut")
             app.discard()
@@ -365,7 +357,7 @@ def test_app(tmp):
             played.clear()
             fire_hotkey(app)
             wait(lambda: app.stream is not None, 10, "recording")
-            seen["red dot"] = wait(lambda: app.icon._icon_handle == app.tray_icons[1] and app.icon.title == "Blurt - Listening", 5, "the red dot")
+            seen["red dot"] = wait(lambda: app.icon._icon_handle == app.tray_icons[1] and app.icon.title == "BlurtPad - Listening", 5, "the red dot")
             seen["told"] = [a[0] for a in notified]
             app.discard()
             seen["dot gone"] = wait(lambda: app.icon._icon_handle == app.tray_icons[0], 5, "the normal tray icon")
@@ -373,19 +365,19 @@ def test_app(tmp):
             seen["tray icons alive"] = all(copies)
             for c in filter(None, copies):
                 user32.DestroyIcon(ctypes.c_void_p(c))
-            seen["sounds"] = [c is saynote.START_CUE for c in played]
+            seen["sounds"] = [c is blurtpad.START_CUE for c in played]
             app.set_setting("popup", True)
 
             # A team meeting: Linh (Zira) and Minh (David) were voice-checked; the transcript names who said what
-            saynote.save_voices({"Linh": saynote.fingerprint(said["Zira", 1]), "Minh": saynote.fingerprint(said["David", 1])})
+            blurtpad.save_voices({"Linh": blurtpad.fingerprint(said["Zira", 1]), "Minh": blurtpad.fingerprint(said["David", 1])})
             seen["meeting refused"] = [app.start_meeting(n)["ok"] for n in (["Linh"], ["Linh", "Nobody"], ["Linh", "linh"], "Linh, Minh")]
             r = app.start_meeting(["Linh", "Minh"])
             seen["meeting"] = (r["ok"], app.get_state()["team"])
-            gap = saynote.np.zeros(8000, "float32")
-            app.buf = Muted([saynote.np.concatenate([said["Zira", 2], gap, said["David", 3]])[:, None]])
+            gap = blurtpad.np.zeros(8000, "float32")
+            app.buf = Muted([blurtpad.np.concatenate([said["Zira", 2], gap, said["David", 3]])[:, None]])
             fire_hotkey(app)
             wait(lambda: not (app.stream or app.busy), 120, "the meeting's transcript")
-            seen["meeting note"] = saynote.list_notes()[0]["text"]
+            seen["meeting note"] = blurtpad.list_notes()[0]["text"]
 
             # A language whose model can't be downloaded: back to the old one, with a message
             real = faster_whisper.WhisperModel
@@ -397,7 +389,7 @@ def test_app(tmp):
                 r = app.set_setting("language", "vi")
                 seen["language loading"] = (r["ok"], app.get_state()["state"])
                 wait(lambda: app.model_ready.is_set(), 10, "the failed model download")
-                seen["language back"] = (app.settings["language"], app.loaded[1], saynote.load_settings()["language"], app.get_state()["problem"])
+                seen["language back"] = (app.settings["language"], app.loaded[1], blurtpad.load_settings()["language"], app.get_state()["problem"])
             finally:
                 faster_whisper.WhisperModel = real
             js("location.href = 'about:blank'")  # what a link or file dropped on the window does
@@ -411,18 +403,18 @@ def test_app(tmp):
         finally:
             app.quit()
 
-    saynote.run(then=drive)
+    blurtpad.run(then=drive)
     shutil.rmtree(wavs, ignore_errors=True)
     check("app: no error or problem", (seen.get("error"), seen.get("problem")), (None, None))
     check("app: empty state shows the hotkey", "Ctrl+Alt+N" in seen.get("empty", ""), True)
     title, text = seen.get("recording", ("", ""))
-    check("app: recording title and instruction", (title, "again to save" in text), ("Blurt - Listening", True))
+    check("app: recording title and instruction", (title, "again to save" in text), ("BlurtPad - Listening", True))
     notes = seen.get("notes", [])
     said = notes[0]["text"].lower() if notes else ""
     print(f"        heard: {said!r}")
     check("app: one note with what was said", (len(notes), "milk" in said and "dentist" in said), (1, True))
     title, text = seen.get("saved", ("", ""))
-    check("app: page shows the new note, title back to idle", (title, "milk" in text.lower()), ("Blurt", True))
+    check("app: page shows the new note, title back to idle", (title, "milk" in text.lower()), ("BlurtPad", True))
     check("app: Delete button removes the note from disk and page", "milk" in seen.get("deleted", "milk").lower(), False)
     check("app: the page can't be navigated away", seen.get("href", "").startswith("http://127.0.0.1:"), True)
     check("app: doesn't hold up a Windows restart or sign-out", seen.get("endsession"), 1)
@@ -435,7 +427,7 @@ def test_app(tmp):
     check("app: a shortcut another program holds is refused, the old one stays", seen.get("taken"), (True, False, True, "Ctrl+Alt+Shift+F11", True))
     check("app: shortcuts that aren't allowed are refused", seen.get("refused"), [False] * 4)
     check("app: settings", seen.get("settings"), (["autostart", "hotkey", "language", "languages", "mic", "mics", "popup", "version", "voices"],
-                                                 saynote.VERSION, True, None))
+                                                 blurtpad.VERSION, True, None))
     check("app: wrong settings are refused", seen.get("bad settings"), [False] * 4)
     if "chosen mic records" in seen:
         check("app: records from the chosen microphone", seen["chosen mic records"], True)
@@ -456,7 +448,7 @@ def test_app(tmp):
 
 if __name__ == "__main__":
     which = sys.argv[1:] or ["pure", "update", "team", "app"]
-    tmp = tempfile.mkdtemp(prefix="saynote-test-")
+    tmp = tempfile.mkdtemp(prefix="blurtpad-test-")
     try:
         for name in ("pure", "update", "team", "exe", "app"):  # exe before app: the in-process app keeps the single-instance event open
             if name in which:

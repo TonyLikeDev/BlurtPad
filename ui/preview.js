@@ -15,7 +15,7 @@
 //   toggle()         -> start recording, or stop and save (same as the hotkey). While transcribing it only shows a 'message'
 //   discard()        -> stop recording and throw it away, no note. Sends a 'message' with undo: true. false if not recording
 //   undo_discard()   -> save the last thrown-away recording after all (it arrives as a 'note' like any other).
-//                       false once it's gone: a newer recording started, or Blurt is busy or quitting
+//                       false once it's gone: a newer recording started, or BlurtPad is busy or quitting
 //   edit_note(id, text) -> true once the new text is saved. The note keeps its id and date. false: show that it wasn't saved
 //   delete_note(id)  -> true once the note is in the Recycle Bin
 //   open_folder()    -> opens the notes folder in Explorer
@@ -36,13 +36,13 @@
 //                                 speech model (about 480 MB) the first time: state is 'loading' until it's ready, and
 //                                 recording still works. If that fails, a 'message' says so and the old language stays
 //   pick_hotkey(on)  -> call with true while the page waits for a new shortcut and false after: in between, the current
-//                       hotkey doesn't start a recording while Blurt's window is in front
+//                       hotkey doesn't start a recording while BlurtPad's window is in front
 //   check_update()   -> {update, error}. update: as in get_state (null: this is the newest). error: null, or a sentence
-//                       (offline, or this copy has no update source). Blurt also checks by itself: soon after it
+//                       (offline, or this copy has no update source). BlurtPad also checks by itself: soon after it
 //                       starts, then daily
 //   install_update() -> true once the download has started (progress arrives in 'state'). false when there's nothing to
 //                       install or a recording or transcription is running (a 'message' says which). When the download
-//                       is ready, Blurt quits and the new version starts by itself; a failed download sends a
+//                       is ready, BlurtPad quits and the new version starts by itself; a failed download sends a
 //                       'message' and progress goes back to null
 //   get_team()       -> {voices, sentence, seconds, max}: names with a saved voice (sorted), the sentence a voice check
 //                       reads, how many seconds it records, the most people in a meeting. Also starts fetching the voice model
@@ -55,10 +55,10 @@
 // get_state() and 'state' also carry team: null, or the meeting's names while it records or is written down, and
 //                       progress: null, or 0..1 while a meeting is written down
 // get_state() and 'state' also carry update: null, or {version: '1.3', notes: "what's new, plain text",
-//                       progress: null (available) | 0..0.99 (downloading) | 1 (installing: Blurt is about to restart)}
+//                       progress: null (available) | 0..0.99 (downloading) | 1 (installing: BlurtPad is about to restart)}
 // Call them once window.pywebview.api exists (the 'pywebviewready' event), never before.
 //
-// Python -> page: window.SayNote.update(msg). The page must define window.SayNote at load. msg is one of
+// Python -> page: window.BlurtPad.update(msg). The page must define window.BlurtPad at load. msg is one of
 //   {type: 'state', state, problem, hotkey, hotkey_ok, started}   (same fields as get_state)
 //   {type: 'level', level}                     0..1, about 15 per second while recording (0 silence, ~0.5 talking)
 //   {type: 'note', note: {id, created, text}}  a note was just saved: add it to the top and show it
@@ -91,14 +91,14 @@
   ]
   let state = ['loading', 'idle', 'recording', 'transcribing'].includes(q.get('state')) ? q.get('state') : 'idle'
   let started = state === 'recording' ? now - 47000 : null, timer = null
-  const problem = q.has('problem') ? 'Ctrl+Alt+N is taken by another program. Is Blurt already running?' : null
+  const problem = q.has('problem') ? 'Ctrl+Alt+N is taken by another program. Is BlurtPad already running?' : null
   const hotkey = 'Ctrl+Alt+N', hotkey_ok = !problem
   let update = q.has('update') ? { version: '1.3', notes: 'Notes can be pinned to the top.\nThe tray icon shows how long you have been recording.', progress: null } : null
   let meeting = q.has('meeting') ? ['Linh', 'Minh', 'Tony', 'An'] : null, progress = q.has('meeting') && state === 'transcribing' ? 0.35 : null
   const voices = ['Minh']
   const snapshot = () => ({ state, problem, hotkey: settings.hotkey, hotkey_ok, started, update,
     team: state === 'recording' || state === 'transcribing' ? meeting : null, progress: state === 'transcribing' ? progress : null })
-  const send = (msg) => window.SayNote && window.SayNote.update(msg)
+  const send = (msg) => window.BlurtPad && window.BlurtPad.update(msg)
   const setState = (s, since = Date.now()) => {
     state = s
     started = s === 'recording' ? since : null
@@ -195,13 +195,13 @@
       return result()
     },
     pick_hotkey: async () => null,
-    get_team: async () => ({ voices: [...voices].sort(), sentence: "The quick brown fox jumps over the lazy dog. I'm reading this so Blurt can learn how my voice sounds.", seconds: 3, max: 10 }),
+    get_team: async () => ({ voices: [...voices].sort(), sentence: "The quick brown fox jumps over the lazy dog. I'm reading this so BlurtPad can learn how my voice sounds.", seconds: 3, max: 10 }),
     record_voice: async (name) => new Promise((resolve) => {  // 3 s of a fake voice; a person named Error isn't heard
       let t = 0
       const tick = setInterval(() => send({ type: 'level', level: Math.max(0, 0.4 + 0.3 * Math.sin((t += 0.6))) }), 66)
       setTimeout(() => {
         clearInterval(tick)
-        if (name === 'Error') return resolve({ ok: false, error: "Blurt couldn't hear you. Check the microphone, then try again." })
+        if (name === 'Error') return resolve({ ok: false, error: "BlurtPad couldn't hear you. Check the microphone, then try again." })
         if (!voices.includes(name)) voices.push(name)
         resolve({ ok: true, error: null })
       }, 3000)

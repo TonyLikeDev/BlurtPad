@@ -1,29 +1,27 @@
-# Blurt: voice notes for Windows
+# BlurtPad: voice notes for Windows
 
-Blurt was called SayNote until version 1.4. Updating keeps your notes: they move from Documents\SayNote to Documents\Blurt.
+Press **Ctrl+Alt+N** anywhere, talk, press **Ctrl+Alt+N** again. The window pops up while it listens, then saves what you said as a note. Open BlurtPad from Start any time to read old notes, newest first. Closing the window keeps it running in the tray (right-click the tray icon: Open, Start with Windows, Quit).
 
-Press **Ctrl+Alt+N** anywhere, talk, press **Ctrl+Alt+N** again. The window pops up while it listens, then saves what you said as a note. Open Blurt from Start any time to read old notes, newest first. Closing the window keeps it running in the tray (right-click the tray icon: Open, Start with Windows, Quit).
-
-In the window: search your notes (Ctrl+F), click into a note to fix what it heard (it saves on its own), Esc or Discard throws a recording away (Undo brings it back). **Settings** (the gear, or Ctrl+,): bring the window to the front or stay in the background (a sound and a red dot on the tray icon instead, for games), the shortcut, the microphone, the language, Start with Windows, Check for updates. **Team meeting**: say how many people and their names, each person reads one sentence so Blurt learns their voice, then record the meeting; the note says who said what (click a name to fix it). Voices are remembered for next time. When a new version is out, an **Update** card appears at the bottom left. Install it with `Blurt-Setup-<version>.exe` from [Releases](https://github.com/TonyLikeDev/SayNote/releases) (no admin needed). Remove it from **Settings > Apps** like any other app; your notes stay.
+In the window: search your notes (Ctrl+F), click into a note to fix what it heard (it saves on its own), Esc or Discard throws a recording away (Undo brings it back). **Settings** (the gear, or Ctrl+,): bring the window to the front or stay in the background (a sound and a red dot on the tray icon instead, for games), the shortcut, the microphone, the language, Start with Windows, Check for updates. **Team meeting**: say how many people and their names, each person reads one sentence so BlurtPad learns their voice, then record the meeting; the note says who said what (click a name to fix it). Voices are remembered for next time. When a new version is out, an **Update** card appears at the bottom left. Install it from [blurtpad.com](https://blurtpad.com), or with `BlurtPad-Setup-<version>.exe` from [Releases](https://github.com/TonyLikeDev/BlurtPad/releases) (no admin needed). Remove it from **Settings > Apps** like any other app; your notes stay.
 
 Speech is turned into text on your PC by [faster-whisper](https://github.com/SYSTRAN/faster-whisper); nothing you say leaves it.
 
 ```
-.\.venv\Scripts\pythonw.exe saynote.py               # run it
+.\.venv\Scripts\pythonw.exe blurtpad.py               # run it
 .\.venv\Scripts\python.exe tests\test_notes.py       # checks: note files, updates, the real window, hotkey thread and Whisper
 ```
 
 Run from source: Windows 10/11, Python 3.11, then `py -3.11 -m venv .venv` and `.\.venv\Scripts\pip install -r requirements.txt`.
 
-- Notes are plain `.txt` files in **Documents\Blurt**, one per note, named by date and time. Delete in the app sends them to the Recycle Bin. You can edit or delete the files yourself; the app re-reads them when its window gets focus.
+- Notes are plain `.txt` files in **Documents\BlurtPad**, one per note, named by date and time. Delete in the app sends them to the Recycle Bin. You can edit or delete the files yourself; the app re-reads them when its window gets focus.
 - If a recording can't be transcribed, it is kept as a `.wav` next to the notes instead of being lost (next to the log if the notes folder can't be written; also when Windows shuts down mid-recording).
-- Speech model: `small.en` for English, on the CPU, offline after the first download (about 460 MB). Any other language, or Detect automatically, uses the multilingual `small` (about 480 MB, downloaded the first time you pick one). `model_name()` in `saynote.py`.
-- Team meetings: Whisper's sentences are matched to the voice-checked people with a speaker model ([sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), 3D-Speaker CAM++, about 26 MB, downloaded on first use). Voice fingerprints stay in `%LOCALAPPDATA%\SayNote\voices.json` on your PC; forget them in Settings. Uninstalling deletes them.
-- Settings live in `%LOCALAPPDATA%\SayNote\settings.json` (Start with Windows is the registry's Run key). Tests point `SAYNOTE_SETTINGS` and `SAYNOTE_DIR` at a temp folder.
-- **Updates** come from this repo's [releases](https://github.com/TonyLikeDev/SayNote/releases) (`REPO` in `saynote.py`). Blurt checks soon after it starts, then daily. Update downloads the release's `Blurt-Setup-<version>.exe`, checks it against GitHub's checksum and quits; the installer runs without asking (keeping the old version if it fails), then Blurt starts again.
-- The installer is per user (no admin), into `%LOCALAPPDATA%\Programs\Blurt`. Installing over a running Blurt, or uninstalling, first asks it to quit (`Blurt.exe --quit`, which writes down a recording in progress). Uninstalling also removes Start with Windows, `settings.json` and the log. Notes and any kept `.wav` files stay, and so does the speech model in the Hugging Face cache.
+- Speech model: `small.en` for English, on the CPU, offline after the first download (about 460 MB). Any other language, or Detect automatically, uses the multilingual `small` (about 480 MB, downloaded the first time you pick one). `model_name()` in `blurtpad.py`.
+- Team meetings: Whisper's sentences are matched to the voice-checked people with a speaker model ([sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), 3D-Speaker CAM++, about 26 MB, downloaded on first use). Voice fingerprints stay in `%LOCALAPPDATA%\BlurtPad\voices.json` on your PC; forget them in Settings. Uninstalling deletes them.
+- Settings live in `%LOCALAPPDATA%\BlurtPad\settings.json` (Start with Windows is the registry's Run key). Tests point `BLURTPAD_SETTINGS` and `BLURTPAD_DIR` at a temp folder.
+- **Updates** come from this repo's [releases](https://github.com/TonyLikeDev/BlurtPad/releases) (`REPO` in `blurtpad.py`). BlurtPad checks soon after it starts, then daily. Update downloads the release's `BlurtPad-Setup-<version>.exe`, checks it against GitHub's checksum and quits; the installer runs without asking (keeping the old version if it fails), then BlurtPad starts again.
+- The installer is per user (no admin), into `%LOCALAPPDATA%\Programs\BlurtPad`. Installing over a running BlurtPad, or uninstalling, first asks it to quit (`BlurtPad.exe --quit`, which writes down a recording in progress). Uninstalling also removes Start with Windows, `settings.json` and the log. Notes and any kept `.wav` files stay, and so does the speech model in the Hugging Face cache.
 - The page is `ui/index.html` (one file). `ui/preview.js` documents the page/Python contract and previews the page in a browser: open `ui/index.html?preview&state=recording&theme=dark` (also `&update`, `&empty`, `&problem`).
-- Errors go to `%LOCALAPPDATA%\SayNote\saynote.log`.
+- Errors go to `%LOCALAPPDATA%\BlurtPad\blurtpad.log`.
 - The app is about 250 MB (Python, Whisper runtime, WebView2 bridge). The model lives in your Hugging Face cache, not in the app.
 
 License: [MIT](LICENSE).
