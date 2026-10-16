@@ -14,7 +14,7 @@ import sounddevice as sd
 import webview
 from PIL import Image, ImageDraw
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 REPO = "TonyLikeDev/BlurtPad"  # owner/name of the GitHub repo whose releases are BlurtPad's updates (their BlurtPad-Setup-<version>.exe). Empty: no updates
 THREADS, RATE = 4, 16000
 MIN_SECS, MAX_SECS = 0.4, 30 * 60  # shorter is a key bump; longer is a forgotten recording, stopped and saved
@@ -383,7 +383,7 @@ def recording_icon(size):
     s = size * 4  # drawn at 4x, then scaled down: round edges even at 16 px
     dot = Image.new("RGBA", (s, s))
     draw = ImageDraw.Draw(dot)
-    draw.ellipse((s * .4, s * .4, s, s), fill="white")  # a ring that keeps the dot apart from the blue page
+    draw.ellipse((s * .4, s * .4, s, s), fill="white")  # a ring that keeps the dot apart from the logo
     draw.ellipse((s * .5, s * .5, s * .92, s * .92), fill="#E81123")
     img.alpha_composite(dot.resize((size, size), Image.LANCZOS))
     png = io.BytesIO()
